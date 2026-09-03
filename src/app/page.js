@@ -65,7 +65,7 @@ export default function Home() {
             </div>
 
             <a
-              href="https://buy.stripe.com/dRm5kx7t63rQaSZ2A3eME00"
+              href="claim"
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:inline-flex bg-white text-black px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-cyan-400 transition"
@@ -120,7 +120,7 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row justify-center gap-4 mt-10">
 
               <a
-                href="https://buy.stripe.com/dRm5kx7t63rQaSZ2A3eME00"
+                href="claim"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group inline-flex items-center justify-center gap-2 bg-cyan-400 text-black font-black px-8 py-4 rounded-2xl hover:bg-cyan-300 hover:scale-[1.03] transition-all shadow-[0_0_40px_rgba(34,211,238,0.15)]"
@@ -601,7 +601,7 @@ export default function Home() {
               </p>
 
               <a
-                href="https://buy.stripe.com/dRm5kx7t63rQaSZ2A3eME00"
+                href="claim"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 mt-8 bg-cyan-400 text-black font-black px-8 py-4 rounded-2xl hover:bg-cyan-300 hover:scale-[1.03] transition-all"

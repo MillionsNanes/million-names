@@ -133,7 +133,7 @@ export default function Wall() {
             </div>
 
             <a
-              href="https://buy.stripe.com/dRm5kx7t63rQaSZ2A3eME00"
+              href="claim"
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:inline-flex bg-white text-black px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-cyan-400 transition"
@@ -287,7 +287,7 @@ export default function Wall() {
                     </p>
 
                     <a
-                      href="https://buy.stripe.com/dRm5kx7t63rQaSZ2A3eME00"
+                      href="claim"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex mt-7 bg-cyan-400 text-black font-bold px-6 py-3 rounded-xl hover:bg-cyan-300 transition"
@@ -408,7 +408,7 @@ export default function Wall() {
               </p>
 
               <a
-                href="https://buy.stripe.com/dRm5kx7t63rQaSZ2A3eME00"
+                href="claim"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 mt-8 bg-cyan-400 text-black font-black px-8 py-4 rounded-2xl hover:bg-cyan-300 hover:scale-[1.03] transition-all"

@@ -23,6 +23,8 @@ export async function POST(request) {
       process.env.STRIPE_WEBHOOK_SECRET
     );
   } catch (error) {
+    console.error("Webhook signature error:", error);
+
     return NextResponse.json(
       {
         error: "Invalid signature",
@@ -37,26 +39,23 @@ export async function POST(request) {
     const session = event.data.object;
 
     const customerEmail =
-      session.customer_details?.email;
+      session.customer_details?.email?.trim().toLowerCase();
 
-    console.log(
-      "Payment received from:",
-      customerEmail
-    );
+    console.log("Payment received from:", customerEmail);
 
     if (customerEmail) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("supporters")
         .update({
           paid: true,
         })
-        .eq("email", customerEmail);
+        .eq("email", customerEmail)
+        .select();
+
+      console.log("Updated rows:", data);
 
       if (error) {
-        console.error(
-          "Supabase update error:",
-          error
-        );
+        console.error("Supabase update error:", error);
       } else {
         console.log(
           "Supporter marked as paid:",

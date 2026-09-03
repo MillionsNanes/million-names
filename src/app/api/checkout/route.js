@@ -9,7 +9,8 @@ const supabase = createClient(
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { displayName } = body;
+
+    const { displayName, email } = body;
 
     const { data: supporters } = await supabase
       .from("supporters")
@@ -25,12 +26,13 @@ export async function POST(request) {
     const { error } = await supabase
       .from("supporters")
       .insert([
-       {
-  display_name: displayName,
-  supporter_number: nextNumber,
-  amount: 1,
-  paid: false,
-}
+        {
+          display_name: displayName,
+          email: email,
+          supporter_number: nextNumber,
+          amount: 1,
+          paid: false,
+        },
       ]);
 
     if (error) {

@@ -6,8 +6,10 @@ import { supabase } from "../../lib/supabase";
 
 export default function Claim() {
   const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isNumberLoading, setIsNumberLoading] = useState(true);
+  const [isNumberLoading, setIsNumberLoading] =
+    useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [nextNumber, setNextNumber] = useState(null);
 
@@ -24,10 +26,15 @@ export default function Claim() {
         .limit(1);
 
       if (error) {
-        console.error("Could not load next number:", error);
+        console.error(
+          "Could not load next number:",
+          error
+        );
+
         setErrorMessage(
           "The next supporter number could not be loaded."
         );
+
         setNextNumber(null);
       } else {
         const next =
@@ -48,9 +55,12 @@ export default function Claim() {
     event.preventDefault();
 
     const cleanedName = displayName.trim();
+    const cleanedEmail = email.trim().toLowerCase();
 
     if (cleanedName.length < 2) {
-      setErrorMessage("Please enter a display name.");
+      setErrorMessage(
+        "Please enter a display name."
+      );
       return;
     }
 
@@ -61,19 +71,40 @@ export default function Claim() {
       return;
     }
 
+    if (!cleanedEmail) {
+      setErrorMessage(
+        "Please enter your email address."
+      );
+      return;
+    }
+
+    const emailPattern =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(cleanedEmail)) {
+      setErrorMessage(
+        "Please enter a valid email address."
+      );
+      return;
+    }
+
     setErrorMessage("");
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          displayName: cleanedName,
-        }),
-      });
+      const response = await fetch(
+        "/api/checkout",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            displayName: cleanedName,
+            email: cleanedEmail,
+          }),
+        }
+      );
 
       const data = await response.json();
 
@@ -86,7 +117,7 @@ export default function Claim() {
 
       if (!data.url) {
         throw new Error(
-          "No Stripe checkout address was returned."
+          "No checkout address was returned."
         );
       }
 
@@ -164,6 +195,7 @@ export default function Claim() {
             onSubmit={handleSubmit}
             className="rounded-[2rem] border border-white/10 bg-zinc-900/70 backdrop-blur-xl p-6 sm:p-8"
           >
+            {/* DISPLAY NAME */}
             <label
               htmlFor="displayName"
               className="block text-sm font-semibold text-gray-300 mb-3"
@@ -190,7 +222,39 @@ export default function Claim() {
             <div className="flex justify-between mt-2 text-xs text-gray-600">
               <span>This name will be public</span>
 
-              <span>{displayName.length}/30</span>
+              <span>
+                {displayName.length}/30
+              </span>
+            </div>
+
+            {/* EMAIL ADDRESS */}
+            <div className="mt-6">
+              <label
+                htmlFor="email"
+                className="block text-sm font-semibold text-gray-300 mb-3"
+              >
+                Email address
+              </label>
+
+              <input
+                id="email"
+                name="email"
+                type="email"
+                placeholder="Enter your email address"
+                value={email}
+                required
+                autoComplete="email"
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setErrorMessage("");
+                }}
+                className="w-full bg-black/60 border border-white/10 rounded-xl px-5 py-4 text-white placeholder-gray-600 outline-none focus:border-cyan-400/50 transition"
+              />
+
+              <p className="mt-2 text-xs text-gray-600">
+                Your email will not appear publicly
+                on the wall.
+              </p>
             </div>
 
             {/* NAME PREVIEW */}
@@ -219,7 +283,8 @@ export default function Claim() {
                 </div>
 
                 <p className="text-2xl font-black mt-2 break-words">
-                  {displayName.trim() || "Your Name"}
+                  {displayName.trim() ||
+                    "Your Name"}
                 </p>
 
                 <p className="text-xs text-gray-500 uppercase tracking-wider mt-2">
@@ -241,8 +306,9 @@ export default function Claim() {
               </div>
 
               <p className="text-xs text-gray-600 mt-2">
-                Contributing more does not provide a different
-                position, ranking or status.
+                Contributing more does not provide
+                a different position, ranking or
+                status.
               </p>
             </div>
 
@@ -263,7 +329,8 @@ export default function Claim() {
                 isLoading ||
                 isNumberLoading ||
                 !nextNumber ||
-                displayName.trim().length < 2
+                displayName.trim().length < 2 ||
+                email.trim().length === 0
               }
               className="w-full mt-8 bg-cyan-400 text-black font-black py-4 rounded-2xl hover:bg-cyan-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -273,8 +340,8 @@ export default function Claim() {
             </button>
 
             <p className="text-xs text-center text-gray-600 mt-4">
-              Your final number will be securely assigned after
-              payment is confirmed.
+              Your final number will be securely
+              assigned after payment is confirmed.
             </p>
           </form>
         </div>

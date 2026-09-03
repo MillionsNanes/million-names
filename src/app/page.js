@@ -16,7 +16,6 @@ export default async function Home() {
     .eq("paid", true);
 
   const claimed = count ?? 0;
-`
   const total = 1000000;
   const remaining = total - claimed;
   const percentage = ((claimed / total) * 100).toFixed(2);

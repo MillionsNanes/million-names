@@ -33,7 +33,38 @@ export async function POST(request) {
     );
   }
 
-  console.log("Stripe event:", event.type);
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object;
+
+    const customerEmail =
+      session.customer_details?.email;
+
+    console.log(
+      "Payment received from:",
+      customerEmail
+    );
+
+    if (customerEmail) {
+      const { error } = await supabase
+        .from("supporters")
+        .update({
+          paid: true,
+        })
+        .eq("email", customerEmail);
+
+      if (error) {
+        console.error(
+          "Supabase update error:",
+          error
+        );
+      } else {
+        console.log(
+          "Supporter marked as paid:",
+          customerEmail
+        );
+      }
+    }
+  }
 
   return NextResponse.json({
     received: true,

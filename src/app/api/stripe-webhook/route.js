@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import Stripe from "stripe";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -7,23 +10,32 @@ const supabase = createClient(
 );
 
 export async function POST(request) {
+  const body = await request.text();
+
+  const signature = request.headers.get("stripe-signature");
+
+  let event;
+
   try {
-    const body = await request.json();
-
-    console.log("Stripe event received:", body.type);
-
-    return NextResponse.json({
-      received: true,
-    });
+    event = stripe.webhooks.constructEvent(
+      body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
   } catch (error) {
     return NextResponse.json(
       {
-        error: error.message,
+        error: "Invalid signature",
       },
       {
-        status: 500,
+        status: 400,
       }
     );
   }
+
+  console.log("Stripe event:", event.type);
+
+  return NextResponse.json({
+    received: true,
+  });
 }
-`

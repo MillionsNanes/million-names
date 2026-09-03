@@ -10,7 +10,12 @@ export async function POST(request) {
   try {
     const body = await request.json();
 
-    g: false })
+    const { displayName, email } = body;
+
+    const { data: supporters } = await supabase
+      .from("supporters")
+      .select("supporter_number")
+      .order("supporter_number", { ascending: false })
       .limit(1);
 
     const nextNumber =

@@ -1,7 +1,22 @@
 import Link from "next/link";
+import { createClient } from "@supabase/supabase-js";
 
-export default function Home() {
-  const claimed = 0;
+export default async function Home() {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+
+  const { count } = await supabase
+    .from("supporters")
+    .select("*", {
+      count: "exact",
+      head: true,
+    })
+    .eq("paid", true);
+
+  const claimed = count ?? 0;
+`
   const total = 1000000;
   const remaining = total - claimed;
   const percentage = ((claimed / total) * 100).toFixed(2);

@@ -1,12 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "../../lib/supabase";
 
 export default function Claim() {
   const [displayName, setDisplayName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isNumberLoading, setIsNumberLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [nextNumber, setNextNumber] = useState(null);
+
+  useEffect(() => {
+    async function loadNextNumber() {
+      setIsNumberLoading(true);
+
+      const { data, error } = await supabase
+        .from("supporters")
+        .select("supporter_number")
+        .order("supporter_number", {
+          ascending: false,
+        })
+        .limit(1);
+
+      if (error) {
+        console.error("Could not load next number:", error);
+        setErrorMessage(
+          "The next supporter number could not be loaded."
+        );
+        setNextNumber(null);
+      } else {
+        const next =
+          data && data.length > 0
+            ? Number(data[0].supporter_number) + 1
+            : 1;
+
+        setNextNumber(next);
+      }
+
+      setIsNumberLoading(false);
+    }
+
+    loadNextNumber();
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -43,12 +79,15 @@ export default function Claim() {
 
       if (!response.ok) {
         throw new Error(
-          data.error || "The payment page could not be opened."
+          data.error ||
+            "The payment page could not be opened."
         );
       }
 
       if (!data.url) {
-        throw new Error("No Stripe checkout address was returned.");
+        throw new Error(
+          "No Stripe checkout address was returned."
+        );
       }
 
       window.location.href = data.url;
@@ -63,6 +102,10 @@ export default function Claim() {
       setIsLoading(false);
     }
   }
+
+  const formattedNextNumber = nextNumber
+    ? `#${String(nextNumber).padStart(6, "0")}`
+    : "#------";
 
   return (
     <main className="min-h-screen bg-black text-white overflow-hidden">
@@ -87,7 +130,7 @@ export default function Claim() {
       {/* PAGE CONTENT */}
       <div className="relative z-10 flex items-center justify-center min-h-screen p-6">
         <div className="w-full max-w-xl">
-          {/* BACK LINK */}
+          {/* BACK BUTTON */}
           <Link
             href="/"
             className="inline-flex items-center text-sm text-gray-500 hover:text-white transition mb-8"
@@ -150,16 +193,30 @@ export default function Claim() {
               <span>{displayName.length}/30</span>
             </div>
 
-            {/* PREVIEW */}
+            {/* NAME PREVIEW */}
             <div className="mt-8 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-6">
-              <p className="text-xs text-cyan-400 uppercase tracking-widest font-bold">
-                Preview
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-cyan-400 uppercase tracking-widest font-bold">
+                  Preview
+                </p>
+
+                <span className="text-xs text-gray-500">
+                  Your place
+                </span>
+              </div>
 
               <div className="mt-4">
-                <p className="font-mono text-cyan-400">
-                  #NEXT
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className="font-mono text-cyan-400">
+                    {isNumberLoading
+                      ? "#------"
+                      : formattedNextNumber}
+                  </p>
+
+                  {isNumberLoading && (
+                    <span className="w-4 h-4 border-2 border-cyan-400/20 border-t-cyan-400 rounded-full animate-spin" />
+                  )}
+                </div>
 
                 <p className="text-2xl font-black mt-2 break-words">
                   {displayName.trim() || "Your Name"}
@@ -171,6 +228,7 @@ export default function Claim() {
               </div>
             </div>
 
+            {/* CONTRIBUTION INFORMATION */}
             <div className="mt-6 rounded-xl border border-white/10 bg-black/30 p-4">
               <div className="flex justify-between gap-4">
                 <span className="text-sm text-gray-400">
@@ -184,10 +242,11 @@ export default function Claim() {
 
               <p className="text-xs text-gray-600 mt-2">
                 Contributing more does not provide a different
-                position or status.
+                position, ranking or status.
               </p>
             </div>
 
+            {/* ERROR MESSAGE */}
             {errorMessage && (
               <div
                 role="alert"
@@ -197,10 +256,13 @@ export default function Claim() {
               </div>
             )}
 
+            {/* PAYMENT BUTTON */}
             <button
               type="submit"
               disabled={
                 isLoading ||
+                isNumberLoading ||
+                !nextNumber ||
                 displayName.trim().length < 2
               }
               className="w-full mt-8 bg-cyan-400 text-black font-black py-4 rounded-2xl hover:bg-cyan-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
@@ -211,8 +273,8 @@ export default function Claim() {
             </button>
 
             <p className="text-xs text-center text-gray-600 mt-4">
-              Your place will only be assigned after payment is
-              confirmed.
+              Your final number will be securely assigned after
+              payment is confirmed.
             </p>
           </form>
         </div>

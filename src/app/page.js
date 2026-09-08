@@ -1,114 +1,272 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-export default async function Home() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
+const TOTAL_PLACES = 1000000;
 
-  const { count } = await supabase
-    .from("supporters")
-    .select("*", {
-      count: "exact",
-      head: true,
-    })
-    .eq("paid", true);
+const steps = [
+  {
+    number: "01",
+    title: "Claim Your Name",
+    description:
+      "Contribute £1 or more and choose the name you want to place on the Million Names wall.",
+  },
+  {
+    number: "02",
+    title: "Receive Your Number",
+    description:
+      "Your supporter number is assigned after your payment is confirmed.",
+  },
+  {
+    number: "03",
+    title: "Become Part of It",
+    description:
+      "Your name becomes part of a shared public wall built by strangers from around the world.",
+  },
+];
 
-  const claimed = count ?? 0;
-  const total = 1000000;
-  const remaining = total - claimed;
-  const percentage = ((claimed / total) * 100).toFixed(2);
+const questions = [
+  {
+    question: "What do I receive?",
+    answer:
+      "One display name, one supporter number and one place on the Million Names wall.",
+  },
+  {
+    question: "How much does it cost?",
+    answer:
+      "The minimum contribution is £1. You can contribute more if you wish, but everyone receives the same status.",
+  },
+  {
+    question: "Does paying more give me a better position?",
+    answer:
+      "No. There are no VIP places, rankings, larger names or special positions based on how much you contribute.",
+  },
+  {
+    question: "Is this a charity?",
+    answer:
+      "No. Million Names is an independently run internet experiment. Contributions go to the creator, not a charity.",
+  },
+  {
+    question: "Is this an investment?",
+    answer:
+      "No. Contributions do not provide ownership, a financial return or a share of the project.",
+  },
+];
+
+export default function Home() {
+  const [claimed, setClaimed] = useState(null);
+  const [supporters, setSupporters] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
+    // Stop waiting indefinitely if the database is slow.
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+
+      if (active) {
+        setLoading(false);
+        setLoadError(
+          "The wall statistics are taking longer than expected. Please try again."
+        );
+      }
+    }, 8000);
+
+    async function loadWallData() {
+      setLoading(true);
+      setLoadError("");
+
+      try {
+        const supabaseUrl =
+          process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+        const supabaseKey =
+          process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || !supabaseKey) {
+          throw new Error(
+            "Supabase environment variables are missing."
+          );
+        }
+
+        const supabase = createClient(
+          supabaseUrl,
+          supabaseKey,
+          {
+            auth: {
+              persistSession: false,
+              autoRefreshToken: false,
+              detectSessionInUrl: false,
+            },
+          }
+        );
+
+        const [countResult, previewResult] = await Promise.all([
+          supabase
+            .from("supporters")
+            .select("supporter_number", {
+              count: "exact",
+              head: true,
+            })
+            .eq("paid", true)
+            .abortSignal(controller.signal),
+
+          supabase
+            .from("supporters")
+            .select("id, supporter_number, display_name")
+            .eq("paid", true)
+            .order("supporter_number", {
+              ascending: true,
+            })
+            .limit(3)
+            .abortSignal(controller.signal),
+        ]);
+
+        if (countResult.error) {
+          throw countResult.error;
+        }
+
+        if (previewResult.error) {
+          throw previewResult.error;
+        }
+
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+
+        if (typeof countResult.count !== "number") {
+          throw new Error("No supporter count was returned.");
+        }
+
+        setClaimed(countResult.count);
+        setSupporters(previewResult.data ?? []);
+      } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+
+        console.error("Could not load wall statistics:", error);
+
+        setLoadError(
+          "The wall statistics are temporarily unavailable. Please try again."
+        );
+      } finally {
+        window.clearTimeout(timeoutId);
+
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadWallData();
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [retryCount]);
+
+  const hasCount = claimed !== null;
+
+  const remaining = hasCount
+    ? Math.max(0, TOTAL_PLACES - claimed)
+    : null;
+
+  const progress = hasCount
+    ? Math.min(100, Math.max(0, (claimed / TOTAL_PLACES) * 100))
+    : 0;
+
+  const percentage = hasCount
+    ? progress.toFixed(2)
+    : null;
+
+  const primaryButton =
+    "inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-400 px-7 py-4 font-bold text-black transition-colors hover:bg-cyan-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-300";
 
   return (
-    <main className="min-h-screen bg-black text-white overflow-hidden">
+    <main className="relative min-h-screen overflow-x-hidden bg-black text-white">
+      {/* LIGHTWEIGHT BACKGROUND */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 70% 650px at 0% 0%, rgba(6,182,212,0.12), transparent 75%), radial-gradient(ellipse 70% 650px at 100% 0%, rgba(147,51,234,0.12), transparent 75%)",
+        }}
+      />
 
-      {/* BACKGROUND EFFECTS */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-[-300px] left-[-200px] w-[600px] h-[600px] bg-cyan-500/10 rounded-full blur-[140px]" />
-        <div className="absolute top-[-250px] right-[-200px] w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-[140px]" />
-        <div className="absolute bottom-[-300px] left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-blue-600/10 rounded-full blur-[150px]" />
-
-        <div
-          className="absolute inset-0 opacity-[0.035]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)",
-            backgroundSize: "50px 50px",
-          }}
-        />
-      </div>
-
-      {/* CONTENT */}
       <div className="relative z-10">
-
         {/* NAVIGATION */}
-        <nav className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between">
-
+        <nav
+          aria-label="Main navigation"
+          className="mx-auto max-w-7xl px-5 py-6 sm:px-6"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-5">
             <Link
               href="/"
-              className="font-black text-xl tracking-tight"
+              className="text-lg font-black tracking-tight sm:text-xl"
             >
               <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
                 MILLION NAMES
               </span>
             </Link>
 
-            <div className="hidden md:flex items-center gap-8 text-sm text-gray-400">
+            <div className="hidden items-center gap-8 text-sm text-gray-300 md:flex">
               <a
                 href="#how-it-works"
-                className="hover:text-white transition"
+                className="transition-colors hover:text-white"
               >
                 How It Works
               </a>
 
               <Link
                 href="/wall"
-                className="hover:text-white transition"
+                className="transition-colors hover:text-white"
               >
                 The Wall
               </Link>
 
               <a
                 href="#faq"
-                className="hover:text-white transition"
+                className="transition-colors hover:text-white"
               >
                 FAQ
               </a>
             </div>
 
-            <a
-              href="claim"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden sm:inline-flex bg-white text-black px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-cyan-400 transition"
+            <Link
+              href="/claim"
+              className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-black transition-colors hover:bg-cyan-300"
             >
               Claim Your Place
-            </a>
-
+            </Link>
           </div>
         </nav>
 
         {/* HERO */}
-        <section className="max-w-6xl mx-auto px-6 pt-20 md:pt-28 pb-24">
+        <section className="mx-auto max-w-6xl px-5 pb-16 pt-12 sm:px-6 md:pb-24 md:pt-24">
+          <div className="mb-8 flex justify-center">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/5 px-4 py-2 text-xs font-semibold text-cyan-300 sm:text-sm">
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 rounded-full bg-cyan-400"
+              />
 
-          {/* LIVE BADGE */}
-          <div className="flex justify-center mb-8">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-cyan-400/20 bg-cyan-400/5 text-cyan-300 text-sm">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400" />
-              </span>
-
-              THE EXPERIMENT IS LIVE
+              ONE MILLION NAMES. ONE SHARED WALL.
             </div>
           </div>
 
-          {/* TITLE */}
           <div className="text-center">
-
-            <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-black tracking-[-0.06em] leading-none">
+            <h1 className="text-6xl font-black leading-none tracking-[-0.06em] sm:text-7xl md:text-8xl lg:text-9xl">
               <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
                 MILLION
               </span>
@@ -120,573 +278,431 @@ export default async function Home() {
               </span>
             </h1>
 
-            <p className="mt-8 text-xl sm:text-2xl md:text-3xl font-medium text-white">
+            <p className="mt-8 text-xl font-medium sm:text-2xl md:text-3xl">
               Can 1,000,000 strangers build something together?
             </p>
 
-            <p className="mt-5 text-base sm:text-lg text-gray-400 max-w-2xl mx-auto leading-relaxed">
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-gray-300 sm:text-lg">
               One million names. One permanent wall.
               <br />
               Every supporter becomes part of the experiment.
             </p>
 
-            {/* HERO BUTTONS */}
-            <div className="flex flex-col sm:flex-row justify-center gap-4 mt-10">
-
-              <a
-                href="claim"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group inline-flex items-center justify-center gap-2 bg-cyan-400 text-black font-black px-8 py-4 rounded-2xl hover:bg-cyan-300 hover:scale-[1.03] transition-all shadow-[0_0_40px_rgba(34,211,238,0.15)]"
-              >
+            <div className="mt-10 flex flex-col justify-center gap-4 sm:flex-row">
+              <Link href="/claim" className={primaryButton}>
                 Claim Your Place
-                <span className="group-hover:translate-x-1 transition">
-                  →
-                </span>
-              </a>
+                <span aria-hidden="true">→</span>
+              </Link>
 
               <Link
                 href="/wall"
-                className="inline-flex items-center justify-center gap-2 border border-white/10 bg-white/[0.04] backdrop-blur-xl font-bold px-8 py-4 rounded-2xl hover:bg-white/[0.08] hover:border-white/20 transition"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-zinc-900 px-7 py-4 font-bold transition-colors hover:bg-zinc-800"
               >
                 Explore The Wall
-                <span>↗</span>
+                <span aria-hidden="true">↗</span>
               </Link>
-
             </div>
 
-            <p className="mt-5 text-xs text-gray-500">
-              Minimum contribution £1 • Everyone gets the same status
+            <p className="mt-5 text-sm text-gray-400">
+              Minimum contribution £1 · Everyone gets the same status
             </p>
-
           </div>
 
           {/* PROGRESS CARD */}
-          <div className="max-w-3xl mx-auto mt-20">
+          <div className="mx-auto mt-14 max-w-3xl sm:mt-20">
+            <div className="rounded-[2rem] border border-white/10 bg-zinc-900 p-6 sm:p-10">
+              <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-300">
+                    The Wall Is Growing
+                  </h2>
 
-            <div className="relative">
-
-              <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-blue-500/5 to-purple-500/10 blur-2xl" />
-
-              <div className="relative rounded-[2rem] border border-white/10 bg-zinc-900/80 backdrop-blur-xl p-7 sm:p-10 shadow-2xl">
-
-                <div className="flex items-center justify-between mb-8">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-400 uppercase tracking-widest">
-                      The Wall Is Growing
-                    </p>
-
-                    <p className="text-xs text-gray-600 mt-1">
-                      Live project progress
-                    </p>
-                  </div>
-
-                  <div className="px-3 py-1.5 rounded-full bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 text-xs font-bold">
-                    {percentage}% COMPLETE
-                  </div>
+                  <p className="mt-2 text-sm text-gray-400">
+                    Confirmed supporters
+                  </p>
                 </div>
 
-                <div className="text-center">
-
-                  <div className="text-6xl sm:text-7xl md:text-8xl font-black tracking-tight bg-gradient-to-r from-cyan-300 to-blue-500 bg-clip-text text-transparent">
-                    {claimed.toLocaleString()}
-                  </div>
-
-                  <div className="text-gray-400 mt-2">
-                    NAMES CLAIMED
-                  </div>
-
-                </div>
-
-                {/* PROGRESS BAR */}
-                <div className="mt-8">
-
-                  <div className="h-4 bg-black/70 rounded-full overflow-hidden border border-white/5">
-
-                    <div
-                      className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 rounded-full transition-all"
-                      style={{
-                        width: `${percentage}%`,
-                      }}
-                    />
-
-                  </div>
-
-                </div>
-
-                <div className="flex justify-between mt-4 text-sm">
-
-                  <span className="text-gray-500">
-                    0
-                  </span>
-
-                  <span className="text-gray-400">
-                    1,000,000
-                  </span>
-
-                </div>
-
-                <div className="mt-8 pt-6 border-t border-white/5 flex flex-col sm:flex-row justify-between gap-4 text-center sm:text-left">
-
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {remaining.toLocaleString()}
-                    </p>
-
-                    <p className="text-xs text-gray-500 uppercase tracking-wider">
-                      Places Remaining
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-2xl font-bold">
-                      £1+
-                    </p>
-
-                    <p className="text-xs text-gray-500 uppercase tracking-wider">
-                      Minimum Contribution
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-2xl font-bold">
-                      1 : 1
-                    </p>
-
-                    <p className="text-xs text-gray-500 uppercase tracking-wider">
-                      One Name Per Place
-                    </p>
-                  </div>
-
-                </div>
-
+                <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-400">
+                  {percentage !== null
+                    ? `${percentage}% COMPLETE`
+                    : loading
+                      ? "LOADING STATS"
+                      : "STATS UNAVAILABLE"}
+                </span>
               </div>
 
+              <div className="text-center" aria-live="polite">
+                <div className="min-h-[72px] bg-gradient-to-r from-cyan-300 to-blue-500 bg-clip-text text-6xl font-black tracking-tight text-transparent sm:text-7xl md:text-8xl">
+                  {hasCount ? claimed.toLocaleString("en-GB") : "—"}
+                </div>
+
+                <p className="mt-2 text-sm tracking-wide text-gray-300">
+                  NAMES CLAIMED
+                </p>
+              </div>
+
+              <div className="mt-8">
+                <div
+                  role="progressbar"
+                  aria-label="Names claimed toward one million"
+                  aria-valuemin={0}
+                  aria-valuemax={TOTAL_PLACES}
+                  aria-valuenow={
+                    hasCount
+                      ? Math.min(claimed, TOTAL_PLACES)
+                      : undefined
+                  }
+                  aria-valuetext={
+                    hasCount
+                      ? `${claimed.toLocaleString("en-GB")} names claimed`
+                      : "Supporter count unavailable"
+                  }
+                  className="h-3 overflow-hidden rounded-full border border-white/5 bg-black"
+                >
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+
+                <div className="mt-3 flex justify-between text-sm text-gray-400">
+                  <span>0</span>
+                  <span>1,000,000</span>
+                </div>
+              </div>
+
+              {loadError && (
+                <div
+                  role="status"
+                  className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200"
+                >
+                  <p>{loadError}</p>
+
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setRetryCount((value) => value + 1)}
+                    className="mt-3 rounded-lg border border-amber-200/30 px-4 py-2 font-semibold transition-colors hover:bg-amber-200/10 disabled:opacity-50"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              )}
+
+              <div className="mt-8 grid gap-6 border-t border-white/10 pt-6 text-center sm:grid-cols-3 sm:text-left">
+                <div>
+                  <p className="text-2xl font-bold">
+                    {remaining !== null
+                      ? remaining.toLocaleString("en-GB")
+                      : "—"}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-400">
+                    Places Remaining
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-2xl font-bold">£1+</p>
+                  <p className="mt-1 text-sm text-gray-400">
+                    Minimum Contribution
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-2xl font-bold">1 : 1</p>
+                  <p className="mt-1 text-sm text-gray-400">
+                    One Name Per Place
+                  </p>
+                </div>
+              </div>
             </div>
-
           </div>
-
         </section>
 
         {/* DIVIDER */}
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        <div className="mx-auto max-w-6xl px-5 sm:px-6">
+          <div className="h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
         </div>
 
         {/* HOW IT WORKS */}
         <section
           id="how-it-works"
-          className="max-w-6xl mx-auto px-6 py-24"
+          className="mx-auto max-w-6xl scroll-mt-8 px-5 py-16 sm:px-6 md:py-24"
         >
-
-          <div className="text-center mb-14">
-
-            <p className="text-cyan-400 text-sm font-bold uppercase tracking-[0.2em] mb-4">
+          <div className="mb-10 text-center md:mb-14">
+            <p className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-cyan-400">
               How It Works
             </p>
 
-            <h2 className="text-4xl md:text-5xl font-black">
-              Your name becomes part of history.
+            <h2 className="text-3xl font-black sm:text-4xl md:text-5xl">
+              Your name becomes part of the story.
             </h2>
 
-            <p className="text-gray-400 mt-5 max-w-2xl mx-auto">
-              No complicated memberships. No VIP tiers. No special treatment.
-              Just one giant wall built by thousands of people.
+            <p className="mx-auto mt-5 max-w-2xl leading-relaxed text-gray-300">
+              No complicated memberships. No VIP tiers.
+              No special treatment. Just one giant wall,
+              built one name at a time.
             </p>
-
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid gap-5 md:grid-cols-3">
+            {steps.map((step) => (
+              <article
+                key={step.number}
+                className="rounded-3xl border border-white/10 bg-zinc-950 p-7 transition-colors hover:border-cyan-400/30 sm:p-8"
+              >
+                <span className="text-5xl font-black text-cyan-400/30">
+                  {step.number}
+                </span>
 
-            {/* CARD 1 */}
-            <div className="group relative rounded-3xl border border-white/10 bg-white/[0.03] p-8 hover:bg-white/[0.05] hover:border-cyan-400/20 transition-all">
+                <h3 className="mt-6 text-2xl font-bold">
+                  {step.title}
+                </h3>
 
-              <div className="text-5xl font-black text-white/10 group-hover:text-cyan-400/20 transition">
-                01
-              </div>
-
-              <h3 className="text-2xl font-bold mt-6">
-                Claim Your Name
-              </h3>
-
-              <p className="text-gray-400 mt-4 leading-relaxed">
-                Contribute £1 or more and choose the name you want to place
-                on the Million Names wall.
-              </p>
-
-            </div>
-
-            {/* CARD 2 */}
-            <div className="group relative rounded-3xl border border-white/10 bg-white/[0.03] p-8 hover:bg-white/[0.05] hover:border-blue-400/20 transition-all">
-
-              <div className="text-5xl font-black text-white/10 group-hover:text-blue-400/20 transition">
-                02
-              </div>
-
-              <h3 className="text-2xl font-bold mt-6">
-                Receive Your Number
-              </h3>
-
-              <p className="text-gray-400 mt-4 leading-relaxed">
-                Every supporter receives a unique number based on the order
-                they joined the experiment.
-              </p>
-
-            </div>
-
-            {/* CARD 3 */}
-            <div className="group relative rounded-3xl border border-white/10 bg-white/[0.03] p-8 hover:bg-white/[0.05] hover:border-purple-400/20 transition-all">
-
-              <div className="text-5xl font-black text-white/10 group-hover:text-purple-400/20 transition">
-                03
-              </div>
-
-              <h3 className="text-2xl font-bold mt-6">
-                Become Part of It
-              </h3>
-
-              <p className="text-gray-400 mt-4 leading-relaxed">
-                Your name becomes part of a permanent public record of
-                something built by strangers from around the world.
-              </p>
-
-            </div>
-
+                <p className="mt-4 leading-relaxed text-gray-300">
+                  {step.description}
+                </p>
+              </article>
+            ))}
           </div>
-
         </section>
 
-        {/* EQUALITY SECTION */}
-        <section className="max-w-6xl mx-auto px-6 pb-24">
-
-          <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-cyan-500/[0.08] via-blue-500/[0.04] to-purple-500/[0.08] p-8 md:p-14">
-
-            <div className="absolute top-0 right-0 w-72 h-72 bg-purple-500/10 blur-[100px] rounded-full" />
-
-            <div className="relative grid md:grid-cols-2 gap-10 items-center">
-
+        {/* EQUALITY */}
+        <section className="mx-auto max-w-6xl px-5 pb-16 sm:px-6 md:pb-24">
+          <div className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-cyan-500/[0.08] via-blue-500/[0.04] to-purple-500/[0.08] p-7 md:p-14">
+            <div className="grid items-center gap-10 md:grid-cols-2">
               <div>
-
-                <p className="text-cyan-400 font-bold text-sm uppercase tracking-widest">
+                <p className="text-sm font-bold uppercase tracking-widest text-cyan-400">
                   The Rule
                 </p>
 
-                <h2 className="text-4xl md:text-5xl font-black mt-4">
+                <h2 className="mt-4 text-3xl font-black sm:text-4xl md:text-5xl">
                   Everyone is equal.
                 </h2>
 
-                <p className="text-gray-400 mt-6 leading-relaxed text-lg">
-                  You can contribute more than £1 if you want to support the
-                  experiment, but money doesn't buy status.
+                <p className="mt-6 text-lg leading-relaxed text-gray-300">
+                  You can contribute more than £1 if you want
+                  to support the experiment, but money
+                  doesn&apos;t buy status.
                 </p>
-
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-
-                <div className="rounded-2xl bg-black/40 border border-white/10 p-5">
-                  <p className="text-2xl font-bold">£1</p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Same status
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-black/40 border border-white/10 p-5">
-                  <p className="text-2xl font-bold">£10+</p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Same status
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-black/40 border border-white/10 p-5">
-                  <p className="text-2xl font-bold">VIP?</p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    No special tier
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-black/40 border border-white/10 p-5">
-                  <p className="text-2xl font-bold">Equal</p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Every supporter
-                  </p>
-                </div>
-
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                {[
+                  ["£1", "Same status"],
+                  ["£10+", "Same status"],
+                  ["No VIP", "No special tier"],
+                  ["Equal", "Every supporter"],
+                ].map(([title, description]) => (
+                  <div
+                    key={title}
+                    className="rounded-2xl border border-white/10 bg-black/40 p-4 sm:p-5"
+                  >
+                    <p className="text-2xl font-bold">{title}</p>
+                    <p className="mt-2 text-sm text-gray-400">
+                      {description}
+                    </p>
+                  </div>
+                ))}
               </div>
-
             </div>
-
           </div>
-
         </section>
 
         {/* WALL PREVIEW */}
-        <section className="max-w-6xl mx-auto px-6 pb-24">
-
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-5 mb-8">
-
+        <section className="mx-auto max-w-6xl px-5 pb-16 sm:px-6 md:pb-24">
+          <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
             <div>
-
-              <p className="text-purple-400 text-sm font-bold uppercase tracking-widest">
+              <p className="text-sm font-bold uppercase tracking-widest text-purple-400">
                 The Wall
               </p>
 
-              <h2 className="text-4xl md:text-5xl font-black mt-3">
+              <h2 className="mt-3 text-3xl font-black sm:text-4xl md:text-5xl">
                 A million places.
               </h2>
-
             </div>
 
             <Link
               href="/wall"
-              className="text-cyan-400 font-bold hover:text-cyan-300 transition"
+              className="font-bold text-cyan-400 transition-colors hover:text-cyan-300"
             >
               View full wall →
             </Link>
-
           </div>
 
-          <div className="rounded-[2rem] border border-white/10 bg-zinc-900/70 overflow-hidden">
-
-            <div className="px-6 py-5 border-b border-white/5 flex justify-between text-xs uppercase tracking-widest text-gray-500">
+          <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-900">
+            <div className="flex justify-between border-b border-white/10 px-6 py-5 text-sm text-gray-400">
               <span>Supporter</span>
               <span>Status</span>
             </div>
 
-            <div className="divide-y divide-white/5">
+            {loading ? (
+              <p
+                role="status"
+                className="px-6 py-10 text-center text-gray-400"
+              >
+                Loading supporters…
+              </p>
+            ) : loadError ? (
+              <p className="px-6 py-10 text-center text-gray-400">
+                The supporter preview is temporarily unavailable.
+              </p>
+            ) : supporters.length > 0 ? (
+              <div className="divide-y divide-white/10">
+                {supporters.map((supporter) => (
+                  <div
+                    key={supporter.id}
+                    className="flex flex-wrap items-center justify-between gap-4 p-5"
+                  >
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3 sm:gap-4">
+                      <span className="font-mono text-sm text-cyan-400">
+                        #
+                        {String(
+                          supporter.supporter_number
+                        ).padStart(6, "0")}
+                      </span>
 
-              <div className="flex justify-between items-center p-5 hover:bg-white/[0.03] transition">
-                <div className="flex items-center gap-4">
-                  <span className="text-cyan-400 font-mono">
-                    #000001
-                  </span>
-                  <span className="text-gray-500">
-                    Available
-                  </span>
-                </div>
-                <span className="text-xs text-gray-600">
-                  WAITING
-                </span>
+                      <span className="min-w-0 break-words font-semibold [overflow-wrap:anywhere]">
+                        {supporter.display_name}
+                      </span>
+                    </div>
+
+                    <span className="text-xs font-semibold text-cyan-300">
+                      CONFIRMED
+                    </span>
+                  </div>
+                ))}
               </div>
+            ) : (
+              <div className="px-6 py-10 text-center">
+                <p className="text-xl font-bold">
+                  The first name starts the story.
+                </p>
 
-              <div className="flex justify-between items-center p-5 hover:bg-white/[0.03] transition">
-                <div className="flex items-center gap-4">
-                  <span className="text-cyan-400 font-mono">
-                    #000002
-                  </span>
-                  <span className="text-gray-500">
-                    Available
-                  </span>
-                </div>
-                <span className="text-xs text-gray-600">
-                  WAITING
-                </span>
+                <p className="mt-3 text-gray-400">
+                  No confirmed supporters are listed yet.
+                </p>
+
+                <Link
+                  href="/claim"
+                  className="mt-5 inline-flex font-bold text-cyan-400 hover:text-cyan-300"
+                >
+                  Claim Your Place →
+                </Link>
               </div>
+            )}
 
-              <div className="flex justify-between items-center p-5 hover:bg-white/[0.03] transition">
-                <div className="flex items-center gap-4">
-                  <span className="text-cyan-400 font-mono">
-                    #000003
-                  </span>
-                  <span className="text-gray-500">
-                    Available
-                  </span>
-                </div>
-                <span className="text-xs text-gray-600">
-                  WAITING
-                </span>
-              </div>
-
-            </div>
-
-            <div className="p-5 border-t border-white/5 text-center">
+            <div className="border-t border-white/10 p-5 text-center">
               <Link
                 href="/wall"
-                className="text-sm font-bold text-gray-400 hover:text-white transition"
+                className="text-sm font-bold text-gray-300 transition-colors hover:text-white"
               >
-                Explore all available places →
+                Explore the full wall →
               </Link>
             </div>
-
           </div>
-
         </section>
 
         {/* FAQ */}
         <section
           id="faq"
-          className="max-w-4xl mx-auto px-6 pb-24"
+          className="mx-auto max-w-4xl scroll-mt-8 px-5 pb-16 sm:px-6 md:pb-24"
         >
-
-          <div className="text-center mb-12">
-
-            <p className="text-blue-400 text-sm font-bold uppercase tracking-widest">
+          <div className="mb-10 text-center">
+            <p className="text-sm font-bold uppercase tracking-widest text-blue-400">
               Questions
             </p>
 
-            <h2 className="text-4xl md:text-5xl font-black mt-3">
+            <h2 className="mt-3 text-3xl font-black sm:text-4xl md:text-5xl">
               Frequently Asked Questions
             </h2>
-
           </div>
 
           <div className="space-y-4">
+            {questions.map((item) => (
+              <article
+                key={item.question}
+                className="rounded-2xl border border-white/10 bg-zinc-950 p-6"
+              >
+                <h3 className="text-lg font-bold">
+                  {item.question}
+                </h3>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <h3 className="font-bold text-lg">
-                What do I receive?
-              </h3>
-
-              <p className="text-gray-400 mt-3 leading-relaxed">
-                You receive a supporter number and a permanent place on the
-                Million Names wall.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <h3 className="font-bold text-lg">
-                How much does it cost?
-              </h3>
-
-              <p className="text-gray-400 mt-3 leading-relaxed">
-                The minimum contribution is £1. You can contribute more if
-                you wish, but every supporter receives the same status.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <h3 className="font-bold text-lg">
-                Does paying more give me a better position?
-              </h3>
-
-              <p className="text-gray-400 mt-3 leading-relaxed">
-                No. There are no VIP places, rankings, larger names or
-                special positions based on how much someone contributes.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <h3 className="font-bold text-lg">
-                Is this a charity?
-              </h3>
-
-              <p className="text-gray-400 mt-3 leading-relaxed">
-                No. Million Names is an internet experiment and public
-                community project.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <h3 className="font-bold text-lg">
-                Is this an investment?
-              </h3>
-
-              <p className="text-gray-400 mt-3 leading-relaxed">
-                No. Contributions do not represent an investment or ownership
-                in the project.
-              </p>
-            </div>
-
+                <p className="mt-3 leading-relaxed text-gray-300">
+                  {item.answer}
+                </p>
+              </article>
+            ))}
           </div>
-
         </section>
 
         {/* FINAL CTA */}
-        <section className="max-w-5xl mx-auto px-6 pb-24">
+        <section className="mx-auto max-w-5xl px-5 pb-16 sm:px-6 md:pb-24">
+          <div className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-900 to-purple-950/30 p-8 text-center md:p-16">
+            <p className="text-sm font-bold uppercase tracking-widest text-cyan-400">
+              Be Part of the Experiment
+            </p>
 
-          <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-900/80 text-center p-10 md:p-16">
+            <h2 className="mt-4 text-3xl font-black sm:text-4xl md:text-6xl">
+              A place for your name.
+            </h2>
 
-            <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 via-purple-500/5 to-pink-500/5" />
+            <p className="mx-auto mt-5 max-w-xl leading-relaxed text-gray-300">
+              One million places. One permanent wall.
+              <br />
+              Become part of something built together.
+            </p>
 
-            <div className="relative">
-
-              <p className="text-cyan-400 text-sm font-bold uppercase tracking-widest">
-                Be There From The Beginning
-              </p>
-
-              <h2 className="text-4xl md:text-6xl font-black mt-4">
-                Your name could be one of the first.
-              </h2>
-
-              <p className="text-gray-400 mt-5 max-w-xl mx-auto">
-                One million places. One permanent wall.
-                <br />
-                The experiment starts with you.
-              </p>
-
-              <a
-                href="claim"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 mt-8 bg-cyan-400 text-black font-black px-8 py-4 rounded-2xl hover:bg-cyan-300 hover:scale-[1.03] transition-all"
-              >
-                Claim Your Place →
-              </a>
-
-            </div>
-
+            <Link
+              href="/claim"
+              className={`${primaryButton} mt-8`}
+            >
+              Claim Your Place
+              <span aria-hidden="true">→</span>
+            </Link>
           </div>
-
         </section>
 
         {/* FOOTER */}
-        <footer className="border-t border-white/5">
-
-          <div className="max-w-7xl mx-auto px-6 py-10">
-
-            <div className="flex flex-col md:flex-row justify-between gap-6">
-
+        <footer className="border-t border-white/10">
+          <div className="mx-auto max-w-7xl px-5 py-10 sm:px-6">
+            <div className="flex flex-col justify-between gap-6 md:flex-row">
               <div>
-
-                <div className="font-black text-lg">
+                <Link href="/" className="text-lg font-black">
                   <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
                     MILLION NAMES
                   </span>
-                </div>
+                </Link>
 
-                <p className="text-gray-600 text-sm mt-2">
+                <p className="mt-2 text-sm text-gray-400">
                   One million strangers. One permanent wall.
                 </p>
-
               </div>
 
-              <div className="flex gap-6 text-sm text-gray-500">
-
-                <Link
-                  href="/wall"
-                  className="hover:text-white transition"
-                >
+              <nav
+                aria-label="Footer navigation"
+                className="flex flex-wrap gap-6 text-sm text-gray-300"
+              >
+                <Link href="/wall" className="hover:text-white">
                   The Wall
                 </Link>
 
-                <a
-                  href="#how-it-works"
-                  className="hover:text-white transition"
-                >
+                <a href="#how-it-works" className="hover:text-white">
                   How It Works
                 </a>
 
-                <a
-                  href="#faq"
-                  className="hover:text-white transition"
-                >
+                <a href="#faq" className="hover:text-white">
                   FAQ
                 </a>
-
-              </div>
-
+              </nav>
             </div>
 
-            <div className="mt-8 pt-6 border-t border-white/5 text-xs text-gray-700">
-              © {new Date().getFullYear()} Million Names. An internet experiment.
-            </div>
-
+            <p className="mt-8 border-t border-white/10 pt-6 text-sm text-gray-400">
+              Million Names. An independent internet experiment.
+            </p>
           </div>
-
         </footer>
-
       </div>
-
     </main>
   );
 }

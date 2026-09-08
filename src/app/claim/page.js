@@ -8,58 +8,105 @@ export default function Claim() {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [nextNumber, setNextNumber] = useState(null);
-  const [isNumberLoading, setIsNumberLoading] =
-    useState(true);
+
+  const [isNumberLoading, setIsNumberLoading] = useState(true);
+  const [numberError, setNumberError] = useState("");
+  const [numberRetry, setNumberRetry] = useState(0);
+
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    async function loadNextNumber() {
-      setIsNumberLoading(true);
+    let active = true;
+    const controller = new AbortController();
 
+    setIsNumberLoading(true);
+    setNumberError("");
+
+    // Prevent the number preview from waiting indefinitely.
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+
+      if (active) {
+        setNumberError(
+          "The supporter number is taking too long to load. Please retry."
+        );
+        setIsNumberLoading(false);
+      }
+    }, 8000);
+
+    async function loadNextNumber() {
       try {
         const { data, error } = await supabase
           .from("supporters")
           .select("supporter_number")
+          .not("supporter_number", "is", null)
           .order("supporter_number", {
             ascending: false,
           })
-          .limit(1);
+          .limit(1)
+          .abortSignal(controller.signal);
 
         if (error) {
           throw error;
         }
 
-        const next =
+        const highestNumber =
           data && data.length > 0
-            ? Number(data[0].supporter_number) + 1
-            : 1;
+            ? Number(data[0].supporter_number)
+            : 0;
 
-        setNextNumber(next);
+        if (
+          !Number.isSafeInteger(highestNumber) ||
+          highestNumber < 0
+        ) {
+          throw new Error("Invalid supporter number returned.");
+        }
+
+        if (active && !controller.signal.aborted) {
+          setNextNumber(highestNumber + 1);
+        }
       } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+
         console.error(
           "Could not load next supporter number:",
           error
         );
 
-        setErrorMessage(
-          "The next supporter number could not be loaded."
-        );
-
         setNextNumber(null);
+        setNumberError(
+          "The next supporter number could not be loaded. Please retry."
+        );
       } finally {
-        setIsNumberLoading(false);
+        window.clearTimeout(timeoutId);
+
+        if (active) {
+          setIsNumberLoading(false);
+        }
       }
     }
 
     loadNextNumber();
-  }, []);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [numberRetry]);
 
   async function handleSubmit(event) {
     event.preventDefault();
 
+    if (isLoading) {
+      return;
+    }
+
     const cleanedName = displayName.trim();
-    const cleanedEmail = email.trim().toLowerCase();
+    const cleanedEmail = email.trim();
 
     if (cleanedName.length < 2) {
       setErrorMessage(
@@ -75,12 +122,16 @@ export default function Claim() {
       return;
     }
 
-    const emailPattern =
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailPattern.test(cleanedEmail)) {
+      setErrorMessage("Please enter a valid email address.");
+      return;
+    }
+
+    if (isNumberLoading || numberError || nextNumber === null) {
       setErrorMessage(
-        "Please enter a valid email address."
+        "Please wait for the supporter number to load, or use Retry."
       );
       return;
     }
@@ -100,22 +151,38 @@ export default function Claim() {
         }),
       });
 
-      const data = await response.json();
+      // Handle missing API routes and non-JSON error pages.
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
         throw new Error(
-          data.error ||
-            "The payment page could not be opened."
+          typeof data?.error === "string"
+            ? data.error
+            : "Checkout could not be opened. Please try again."
         );
       }
 
-      if (!data.url) {
+      if (typeof data?.url !== "string" || !data.url.trim()) {
         throw new Error(
-          "No checkout address was returned."
+          "The checkout API did not return a payment address."
         );
       }
 
-      window.location.href = data.url;
+      const checkoutUrl = new URL(
+        data.url,
+        window.location.origin
+      );
+
+      if (
+        checkoutUrl.protocol !== "https:" &&
+        checkoutUrl.origin !== window.location.origin
+      ) {
+        throw new Error(
+          "The checkout API returned an invalid payment address."
+        );
+      }
+
+      window.location.assign(checkoutUrl.href);
     } catch (error) {
       console.error("Checkout error:", error);
 
@@ -129,58 +196,48 @@ export default function Claim() {
     }
   }
 
-  const formattedNextNumber = nextNumber
-    ? `#${String(nextNumber).padStart(6, "0")}`
-    : "#------";
+  const formattedNextNumber =
+    nextNumber !== null
+      ? `#${String(nextNumber).padStart(6, "0")}`
+      : "#------";
 
   const formIsValid =
     displayName.trim().length >= 2 &&
     displayName.trim().length <= 30 &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-      email.trim()
-    );
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  const inputClasses =
+    "w-full rounded-xl border border-white/15 bg-black/60 px-4 py-4 text-base text-white outline-none transition-colors placeholder:text-gray-500 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 disabled:opacity-60";
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-black text-white">
-      {/* BACKGROUND EFFECTS */}
+    <main className="relative min-h-screen overflow-x-hidden bg-black text-white">
+      {/* LIGHTWEIGHT BACKGROUND: NO LARGE BLUR FILTERS */}
       <div
-        className="fixed inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         aria-hidden="true"
-      >
-        <div className="absolute top-[-250px] left-[-200px] h-[600px] w-[600px] rounded-full bg-cyan-500/10 blur-[150px]" />
-
-        <div className="absolute top-[-250px] right-[-200px] h-[600px] w-[600px] rounded-full bg-purple-600/10 blur-[150px]" />
-
-        <div className="absolute bottom-[-300px] left-1/2 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-blue-600/10 blur-[150px]" />
-
-        <div
-          className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)",
-            backgroundSize: "50px 50px",
-          }}
-        />
-      </div>
+        style={{
+          background:
+            "radial-gradient(ellipse at top left, rgba(6,182,212,0.12), transparent 55%), radial-gradient(ellipse at top right, rgba(147,51,234,0.12), transparent 55%)",
+        }}
+      />
 
       {/* PAGE CONTENT */}
-      <div className="relative z-10 flex min-h-screen items-center justify-center p-6 py-12">
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
         <div className="w-full max-w-xl">
-          {/* BACK LINK */}
           <Link
             href="/"
-            className="mb-8 inline-flex items-center text-sm text-gray-500 transition hover:text-white"
+            className="mb-8 inline-flex items-center py-2 text-sm text-gray-300 transition-colors hover:text-white"
           >
             ← Back to home
           </Link>
 
           {/* HEADING */}
-          <div className="mb-10 text-center">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-400">
+          <div className="mb-8 text-center sm:mb-10">
+            <p className="text-sm font-bold uppercase tracking-[0.2em] text-cyan-400">
               Step 1 of 2
             </p>
 
-            <h1 className="mt-3 text-5xl font-black md:text-6xl">
+            <h1 className="mt-3 text-5xl font-black leading-tight tracking-tight md:text-6xl">
               <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
                 CLAIM YOUR
               </span>
@@ -190,21 +247,21 @@ export default function Claim() {
               <span>PLACE</span>
             </h1>
 
-            <p className="mt-6 text-gray-400">
+            <p className="mt-5 text-base text-gray-300">
               Choose the name that will appear on the wall.
             </p>
           </div>
 
-          {/* FORM */}
+          {/* SOLID PANEL: NO BACKDROP BLUR */}
           <form
             onSubmit={handleSubmit}
-            className="rounded-[2rem] border border-white/10 bg-zinc-900/70 p-6 backdrop-blur-xl sm:p-8"
+            className="rounded-[2rem] border border-white/10 bg-zinc-900 p-6 sm:p-8"
           >
             {/* DISPLAY NAME */}
             <div>
               <label
                 htmlFor="displayName"
-                className="mb-3 block text-sm font-semibold text-gray-300"
+                className="mb-3 block text-sm font-semibold text-gray-200"
               >
                 Display name
               </label>
@@ -218,17 +275,21 @@ export default function Claim() {
                 minLength={2}
                 maxLength={30}
                 required
-                autoComplete="name"
+                disabled={isLoading}
+                autoComplete="nickname"
+                aria-describedby="displayNameHelp"
                 onChange={(event) => {
                   setDisplayName(event.target.value);
                   setErrorMessage("");
                 }}
-                className="w-full rounded-xl border border-white/10 bg-black/60 px-5 py-4 text-white outline-none transition placeholder:text-gray-600 focus:border-cyan-400/50"
+                className={inputClasses}
               />
 
-              <div className="mt-2 flex justify-between text-xs text-gray-600">
+              <div
+                id="displayNameHelp"
+                className="mt-2 flex justify-between gap-3 text-sm text-gray-400"
+              >
                 <span>This name will be public</span>
-
                 <span>{displayName.length}/30</span>
               </div>
             </div>
@@ -237,7 +298,7 @@ export default function Claim() {
             <div className="mt-6">
               <label
                 htmlFor="email"
-                className="mb-3 block text-sm font-semibold text-gray-300"
+                className="mb-3 block text-sm font-semibold text-gray-200"
               >
                 Email address
               </label>
@@ -249,102 +310,123 @@ export default function Claim() {
                 value={email}
                 placeholder="Enter your email address"
                 required
+                disabled={isLoading}
                 autoComplete="email"
+                autoCapitalize="none"
+                spellCheck={false}
                 onChange={(event) => {
                   setEmail(event.target.value);
                   setErrorMessage("");
                 }}
-                className="w-full rounded-xl border border-white/10 bg-black/60 px-5 py-4 text-white outline-none transition placeholder:text-gray-600 focus:border-cyan-400/50"
+                className={inputClasses}
               />
-
-              <p className="mt-2 text-xs text-gray-600">
-                Your email address will not appear publicly.
-              </p>
             </div>
 
             {/* PREVIEW */}
-            <div className="mt-8 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-6">
-              <div className="flex items-center justify-between">
+            <div className="mt-8 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-5 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-bold uppercase tracking-widest text-cyan-400">
                   Preview
                 </p>
 
-                <span className="text-xs text-gray-500">
-                  Your place
+                <span className="text-xs text-gray-400">
+                  Estimated next number
                 </span>
               </div>
 
               <div className="mt-4">
-                <div className="flex items-center gap-3">
-                  <p className="font-mono text-cyan-400">
-                    {isNumberLoading
-                      ? "#------"
-                      : formattedNextNumber}
-                  </p>
+                <p
+                  aria-live="polite"
+                  className="font-mono text-lg text-cyan-400"
+                >
+                  {isNumberLoading
+                    ? "Loading number…"
+                    : formattedNextNumber}
+                </p>
 
-                  {isNumberLoading && (
-                    <span
-                      className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400/20 border-t-cyan-400"
-                      aria-label="Loading supporter number"
-                    />
-                  )}
-                </div>
-
-                <p className="mt-2 break-words text-2xl font-black">
+                <p className="mt-3 break-words text-2xl font-black [overflow-wrap:anywhere]">
                   {displayName.trim() || "Your Name"}
                 </p>
 
-                <p className="mt-2 text-xs uppercase tracking-wider text-gray-500">
+                <p className="mt-2 text-xs uppercase tracking-wider text-gray-400">
                   Awaiting payment
                 </p>
+
+                <p className="mt-4 text-sm leading-relaxed text-gray-400">
+                  This number is a preview, not a reservation.
+                  It may change before your payment is confirmed.
+                </p>
               </div>
+
+              {numberError && (
+                <div
+                  role="status"
+                  className="mt-4 border-t border-white/10 pt-4"
+                >
+                  <p className="text-sm text-amber-200">
+                    {numberError}
+                  </p>
+
+                  <button
+                    type="button"
+                    disabled={isNumberLoading || isLoading}
+                    onClick={() => {
+                      setErrorMessage("");
+                      setNumberRetry((value) => value + 1);
+                    }}
+                    className="mt-3 rounded-lg border border-cyan-400/30 px-4 py-2 text-sm font-semibold text-cyan-300 transition-colors hover:bg-cyan-400/10 disabled:opacity-50"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* CONTRIBUTION INFORMATION */}
             <div className="mt-6 rounded-xl border border-white/10 bg-black/30 p-4">
               <div className="flex justify-between gap-4">
-                <span className="text-sm text-gray-400">
+                <span className="text-sm text-gray-300">
                   Minimum contribution
                 </span>
 
                 <span className="font-bold">£1</span>
               </div>
 
-              <p className="mt-2 text-xs text-gray-600">
-                Contributing more does not provide a
-                different position, ranking or status.
+              <p className="mt-3 text-sm leading-relaxed text-gray-400">
+                Contributing more does not provide a different
+                position, ranking or status.
               </p>
             </div>
 
-            {/* ERROR MESSAGE */}
+            {/* FORM ERROR */}
             {errorMessage && (
               <div
                 role="alert"
-                className="mt-5 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-300"
+                className="mt-5 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200"
               >
                 {errorMessage}
               </div>
             )}
 
-            {/* CONTINUE BUTTON */}
+            {/* PAYMENT BUTTON */}
             <button
               type="submit"
               disabled={
                 isLoading ||
                 isNumberLoading ||
-                !nextNumber ||
+                nextNumber === null ||
+                Boolean(numberError) ||
                 !formIsValid
               }
-              className="mt-8 w-full rounded-2xl bg-cyan-400 py-4 font-black text-black transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+              className="mt-8 w-full rounded-2xl bg-cyan-400 px-4 py-4 font-black text-black transition-colors hover:bg-cyan-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isLoading
-                ? "Opening secure payment..."
+                ? "Opening secure payment…"
                 : "Continue To Payment →"}
             </button>
 
-            <p className="mt-4 text-center text-xs text-gray-600">
-              Your final supporter number will be assigned
-              after payment is confirmed.
+            <p className="mt-4 text-center text-sm leading-relaxed text-gray-400">
+              Review your display name and email before continuing.
             </p>
           </form>
         </div>

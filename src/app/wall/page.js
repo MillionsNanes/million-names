@@ -1,235 +1,409 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 const TOTAL_PLACES = 1000000;
+const PAGE_SIZE = 24;
 
 export default function Wall() {
   const [supporters, setSupporters] = useState([]);
+  const [claimed, setClaimed] = useState(null);
+  const [matchingCount, setMatchingCount] = useState(0);
+
   const [search, setSearch] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(1);
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
-    async function loadSupporters() {
-      setLoading(true);
-      setLoadError("");
+    let active = true;
+    const controller = new AbortController();
 
-      const { data, error } = await supabase
-  .from("supporters")
-  .select("id, supporter_number, display_name")
-  .eq("paid", true)
-  .order("supporter_number", { ascending: true });
+    setLoading(true);
+    setLoadError("");
 
-      if (error) {
-        console.error(error);
-        setLoadError("The wall could not be loaded. Please try again.");
-      } else {
-        setSupporters(data || []);
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+
+      if (active) {
+        setLoadError(
+          "The wall is taking longer than expected to load. Please try again."
+        );
+        setLoading(false);
       }
+    }, 10000);
 
-      setLoading(false);
+    async function loadSupporters() {
+      try {
+        const firstRow = (page - 1) * PAGE_SIZE;
+
+        let supporterQuery = supabase
+          .from("supporters")
+          .select("id, supporter_number, display_name", {
+            count: "exact",
+          })
+          .eq("paid", true);
+
+        if (searchTerm) {
+          const numberText = searchTerm.replace(/^#/, "");
+
+          if (/^\d+$/.test(numberText)) {
+            const number = Number(numberText);
+
+            if (
+              !Number.isSafeInteger(number) ||
+              number < 1 ||
+              number > TOTAL_PLACES
+            ) {
+              throw new Error(
+                "Enter a supporter number between 1 and 1,000,000."
+              );
+            }
+
+            supporterQuery = supporterQuery.eq(
+              "supporter_number",
+              number
+            );
+          } else {
+            // Treat wildcard characters as literal name characters.
+            const escapedSearch = searchTerm
+              .replace(/\\/g, "\\\\")
+              .replace(/%/g, "\\%")
+              .replace(/_/g, "\\_");
+
+            supporterQuery = supporterQuery.ilike(
+              "display_name",
+              `%${escapedSearch}%`
+            );
+          }
+        }
+
+        const [totalResult, supporterResult] = await Promise.all([
+          supabase
+            .from("supporters")
+            .select("supporter_number", {
+              count: "exact",
+              head: true,
+            })
+            .eq("paid", true)
+            .abortSignal(controller.signal),
+
+          supporterQuery
+            .order("supporter_number", {
+              ascending: true,
+            })
+            .order("id", {
+              ascending: true,
+            })
+            .range(firstRow, firstRow + PAGE_SIZE - 1)
+            .abortSignal(controller.signal),
+        ]);
+
+        if (totalResult.error) {
+          throw totalResult.error;
+        }
+
+        if (supporterResult.error) {
+          throw supporterResult.error;
+        }
+
+        if (
+          typeof totalResult.count !== "number" ||
+          typeof supporterResult.count !== "number"
+        ) {
+          throw new Error("The supporter count was not returned.");
+        }
+
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+
+        const lastPage = Math.max(
+          1,
+          Math.ceil(supporterResult.count / PAGE_SIZE)
+        );
+
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
+
+        setClaimed(totalResult.count);
+        setMatchingCount(supporterResult.count);
+        setSupporters(supporterResult.data ?? []);
+      } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+
+        console.error("Could not load the wall:", error);
+
+        setLoadError(
+          error instanceof Error &&
+          error.message.startsWith("Enter a supporter number")
+            ? error.message
+            : "The wall could not be loaded. Please try again."
+        );
+      } finally {
+        window.clearTimeout(timeoutId);
+
+        if (active) {
+          setLoading(false);
+        }
+      }
     }
 
     loadSupporters();
-  }, []);
 
-  const claimed = supporters.length;
-  const remaining = TOTAL_PLACES - claimed;
-  const percentage = ((claimed / TOTAL_PLACES) * 100).toFixed(2);
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [page, searchTerm, retryCount]);
 
-  const filteredSupporters = useMemo(() => {
-    const cleanSearch = search
-      .trim()
-      .toLowerCase()
-      .replace(/^#/, "");
+  function handleSearch(event) {
+    event.preventDefault();
 
-    if (filter === "available") {
-      return [];
+    const cleanedSearch = search.trim();
+
+    setFilter("all");
+
+    if (cleanedSearch !== searchTerm || page !== 1) {
+      setLoading(true);
+      setPage(1);
+      setSearchTerm(cleanedSearch);
+    } else {
+      setLoading(true);
+      setRetryCount((value) => value + 1);
     }
+  }
 
-    return supporters.filter((supporter) => {
-      if (!cleanSearch) {
-        return true;
-      }
+  function clearSearch() {
+    setSearch("");
 
-      const displayName = String(
-        supporter.display_name || ""
-      ).toLowerCase();
+    if (searchTerm || page !== 1) {
+      setLoading(true);
+      setPage(1);
+      setSearchTerm("");
+    }
+  }
 
-      const supporterNumber = String(
-        supporter.supporter_number || ""
-      );
+  function changePage(nextPage) {
+    setLoading(true);
+    setPage(nextPage);
+  }
 
-      return (
-        displayName.includes(cleanSearch) ||
-        supporterNumber.includes(cleanSearch)
-      );
-    });
-  }, [supporters, search, filter]);
+  const remaining =
+    claimed === null
+      ? null
+      : Math.max(0, TOTAL_PLACES - claimed);
+
+  const percentage =
+    claimed === null
+      ? null
+      : ((claimed / TOTAL_PLACES) * 100).toFixed(2);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(matchingCount / PAGE_SIZE)
+  );
+
+  const firstShown =
+    matchingCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+
+  const lastShown =
+    matchingCount === 0
+      ? 0
+      : firstShown + supporters.length - 1;
+
+  const claimButton =
+    "inline-flex items-center justify-center rounded-xl bg-cyan-400 px-6 py-3 font-bold text-black transition-colors hover:bg-cyan-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-300";
 
   return (
-    <main className="min-h-screen bg-black text-white overflow-hidden">
-      {/* BACKGROUND */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-[-250px] left-[-200px] w-[600px] h-[600px] bg-cyan-500/10 rounded-full blur-[150px]" />
+    <main className="relative min-h-screen overflow-x-hidden bg-black text-white">
+      {/* LIGHTWEIGHT BACKGROUND */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 70% 650px at 0% 0%, rgba(6,182,212,0.12), transparent 75%), radial-gradient(ellipse 70% 650px at 100% 0%, rgba(147,51,234,0.12), transparent 75%)",
+        }}
+      />
 
-        <div className="absolute top-[-250px] right-[-200px] w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-[150px]" />
-
-        <div className="absolute bottom-[-300px] left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-blue-600/10 rounded-full blur-[150px]" />
-
-        <div
-          className="absolute inset-0 opacity-[0.035]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)",
-            backgroundSize: "50px 50px",
-          }}
-        />
-      </div>
-
-      {/* CONTENT */}
       <div className="relative z-10">
         {/* NAVIGATION */}
-        <nav className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between">
+        <nav
+          aria-label="Main navigation"
+          className="mx-auto max-w-7xl px-4 py-6 sm:px-6"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <Link
               href="/"
-              className="font-black text-xl tracking-tight"
+              className="text-lg font-black tracking-tight sm:text-xl"
             >
               <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
                 MILLION NAMES
               </span>
             </Link>
 
-            <div className="hidden md:flex items-center gap-8 text-sm text-gray-400">
-              <Link
-                href="/"
-                className="hover:text-white transition"
-              >
+            <div className="hidden items-center gap-7 text-sm text-gray-300 md:flex">
+              <Link href="/" className="hover:text-white">
                 Home
               </Link>
 
-              <span className="text-white">
+              <Link
+                href="/wall"
+                aria-current="page"
+                className="text-white"
+              >
                 The Wall
-              </span>
+              </Link>
 
               <Link
                 href="/#how-it-works"
-                className="hover:text-white transition"
+                className="hover:text-white"
               >
                 How It Works
               </Link>
 
-              <Link
-                href="/#faq"
-                className="hover:text-white transition"
-              >
+              <Link href="/#faq" className="hover:text-white">
                 FAQ
               </Link>
             </div>
 
-            <a
-              href="claim"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden sm:inline-flex bg-white text-black px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-cyan-400 transition"
+            <Link
+              href="/claim"
+              className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-black transition-colors hover:bg-cyan-300"
             >
               Claim Your Place
-            </a>
+            </Link>
           </div>
         </nav>
 
         {/* HERO */}
-        <section className="max-w-6xl mx-auto px-6 pt-16 md:pt-24 pb-16">
-          <div className="flex justify-center mb-7">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-cyan-400/20 bg-cyan-400/5 text-cyan-300 text-sm">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400" />
-              </span>
-
-              THE EXPERIMENT IS LIVE
-            </div>
-          </div>
+        <section className="mx-auto max-w-6xl px-4 pb-10 pt-6 sm:px-6 md:pb-14 md:pt-12">
+          <Link
+            href="/"
+            className="mb-8 inline-flex py-2 text-sm text-gray-300 hover:text-white"
+          >
+            ← Back to home
+          </Link>
 
           <div className="text-center">
-            <h1 className="text-6xl md:text-8xl font-black tracking-[-0.05em] leading-none">
+            <p className="mb-5 text-sm font-bold uppercase tracking-widest text-cyan-400">
+              One million places. One shared story.
+            </p>
+
+            <h1 className="text-5xl font-black leading-none tracking-[-0.05em] sm:text-6xl md:text-8xl">
               <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
                 THE NAME
               </span>
 
               <br />
 
-              <span className="text-white">
-                WALL
-              </span>
+              WALL
             </h1>
 
-            <p className="text-xl md:text-2xl text-gray-400 mt-7 max-w-2xl mx-auto">
-              One million places waiting to become part of the story.
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-gray-300">
+              Discover the supporters becoming part of the story.
             </p>
           </div>
         </section>
 
         {/* STATISTICS */}
-        <section className="max-w-6xl mx-auto px-6 pb-12">
-          <div className="grid md:grid-cols-3 gap-4">
+        <section className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
+          <div className="grid gap-3 sm:grid-cols-3">
             <StatCard
-              value={claimed.toLocaleString()}
+              value={
+                claimed === null
+                  ? "—"
+                  : claimed.toLocaleString("en-GB")
+              }
               label="Names Claimed"
               colour="text-cyan-400"
             />
 
             <StatCard
-              value={remaining.toLocaleString()}
+              value={
+                remaining === null
+                  ? "—"
+                  : remaining.toLocaleString("en-GB")
+              }
               label="Places Remaining"
             />
 
             <StatCard
-              value={`${percentage}%`}
+              value={
+                percentage === null ? "—" : `${percentage}%`
+              }
               label="Complete"
               colour="text-purple-400"
             />
           </div>
         </section>
 
-        {/* WALL CONTAINER */}
-        <section className="max-w-7xl mx-auto px-6 pb-24">
-          <div className="rounded-[2rem] border border-white/10 bg-zinc-900/70 backdrop-blur-xl overflow-hidden">
-            {/* WALL HEADER */}
-            <div className="p-6 md:p-8 border-b border-white/5">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        {/* DIRECTORY */}
+        <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 md:pb-24">
+          <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-900">
+            <div className="border-b border-white/10 p-5 sm:p-8">
+              <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
                 <div>
-                  <p className="text-cyan-400 text-xs font-bold uppercase tracking-[0.2em]">
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-400">
                     Supporter Directory
                   </p>
 
-                  <h2 className="text-3xl md:text-4xl font-black mt-2">
+                  <h2 className="mt-3 text-3xl font-black">
                     Explore the wall
                   </h2>
                 </div>
 
                 {/* SEARCH */}
-                <div className="relative w-full lg:w-80">
-                  <input
-                    type="search"
-                    value={search}
-                    onChange={(event) =>
-                      setSearch(event.target.value)
-                    }
-                    placeholder="Search name or number..."
-                    className="w-full bg-black/60 border border-white/10 rounded-xl px-5 py-3.5 text-sm text-white placeholder-gray-600 outline-none focus:border-cyan-400/50 transition"
-                  />
-                </div>
+                <form
+                  onSubmit={handleSearch}
+                  role="search"
+                  className="w-full lg:max-w-md"
+                >
+                  <label
+                    htmlFor="wallSearch"
+                    className="mb-2 block text-sm text-gray-300"
+                  >
+                    Search a name or exact supporter number
+                  </label>
+
+                  <div className="flex gap-2">
+                    <input
+                      id="wallSearch"
+                      name="wallSearch"
+                      type="search"
+                      value={search}
+                      maxLength={100}
+                      placeholder="Name or #000001"
+                      onChange={(event) =>
+                        setSearch(event.target.value)
+                      }
+                      className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/60 px-4 py-3 text-base text-white outline-none placeholder:text-gray-500 focus:border-cyan-400"
+                    />
+
+                    <button
+                      type="submit"
+                      className="rounded-xl bg-cyan-400 px-4 py-3 text-sm font-bold text-black transition-colors hover:bg-cyan-300"
+                    >
+                      Search
+                    </button>
+                  </div>
+                </form>
               </div>
 
               {/* FILTERS */}
-              <div className="flex flex-wrap gap-3 mt-7">
+              <div className="mt-6 flex flex-wrap gap-3">
                 <FilterButton
                   active={filter === "all"}
                   onClick={() => setFilter("all")}
@@ -251,221 +425,265 @@ export default function Wall() {
                   Claimed
                 </FilterButton>
               </div>
+
+              {searchTerm && (
+                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-gray-300">
+                  <span>
+                    Search: <strong>{searchTerm}</strong>
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="rounded-lg border border-white/15 px-3 py-2 hover:bg-white/5"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* WALL */}
-            <div className="p-5 md:p-8">
-              {loading && (
-                <div className="text-center py-16">
-                  <div className="inline-block w-8 h-8 border-4 border-cyan-400/20 border-t-cyan-400 rounded-full animate-spin" />
+            {/* RESULTS */}
+            <div
+              className="min-h-[200px] p-5 sm:p-8"
+              aria-busy={loading}
+            >
+              {loading ? (
+                <p
+                  role="status"
+                  className="py-14 text-center text-gray-300"
+                >
+                  Loading the wall…
+                </p>
+              ) : loadError ? (
+                <div role="alert" className="py-12 text-center">
+                  <p className="text-red-200">{loadError}</p>
 
-                  <p className="text-gray-400 mt-4">
-                    Loading the wall...
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoading(true);
+                      setRetryCount((value) => value + 1);
+                    }}
+                    className="mt-5 rounded-xl border border-white/20 px-5 py-3 font-semibold hover:bg-white/5"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : filter === "available" ? (
+                <div className="py-12 text-center">
+                  <h3 className="text-2xl font-bold">
+                    Available places
+                  </h3>
+
+                  <p className="mt-3 text-gray-300">
+                    {remaining?.toLocaleString("en-GB")} places
+                    remain across the wall.
+                  </p>
+
+                  <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-gray-400">
+                    This is the overall availability total.
+                    Supporter searches apply to claimed names.
+                  </p>
+
+                  <Link
+                    href="/claim"
+                    className={`${claimButton} mt-6`}
+                  >
+                    Claim Your Place →
+                  </Link>
+                </div>
+              ) : supporters.length === 0 ? (
+                <div className="py-12 text-center">
+                  <h3 className="text-2xl font-bold">
+                    {searchTerm
+                      ? "No matching supporters"
+                      : "The first place is waiting"}
+                  </h3>
+
+                  <p className="mt-3 text-gray-300">
+                    {searchTerm
+                      ? "Try another name or supporter number."
+                      : "No confirmed supporters are listed yet."}
                   </p>
                 </div>
-              )}
-
-              {!loading && loadError && (
-                <div className="text-center py-16">
-                  <p className="text-red-300">
-                    {loadError}
-                  </p>
-                </div>
-              )}
-
-              {!loading &&
-                !loadError &&
-                filter === "available" && (
-                  <div className="text-center py-16">
-                    <p className="text-2xl font-bold">
-                      Available places
+              ) : (
+                <>
+                  {filter === "all" && (
+                    <p className="mb-5 text-sm text-gray-400">
+                      Confirmed names are shown below. Select
+                      Available to see how many places remain.
                     </p>
+                  )}
 
-                    <p className="text-gray-500 mt-3">
-                      {remaining.toLocaleString()} places are
-                      still waiting to be claimed.
-                    </p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {supporters.map((supporter) => (
+                      <article
+                        key={supporter.id}
+                        className="min-w-0 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.04] p-5 transition-colors hover:border-cyan-400/50"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-mono text-sm text-cyan-400">
+                            #
+                            {String(
+                              supporter.supporter_number
+                            ).padStart(6, "0")}
+                          </span>
 
-                    <a
-                      href="claim"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex mt-7 bg-cyan-400 text-black font-bold px-6 py-3 rounded-xl hover:bg-cyan-300 transition"
-                    >
-                      Claim Your Place
-                    </a>
+                          <span
+                            aria-hidden="true"
+                            className="h-2 w-2 rounded-full bg-cyan-400"
+                          />
+                        </div>
+
+                        <h3 className="mt-7 break-words text-lg font-bold [overflow-wrap:anywhere]">
+                          {supporter.display_name}
+                        </h3>
+
+                        <p className="mt-2 text-xs uppercase tracking-wider text-gray-400">
+                          Confirmed
+                        </p>
+                      </article>
+                    ))}
                   </div>
-                )}
-
-              {!loading &&
-                !loadError &&
-                filter !== "available" && (
-                  <>
-                    {filteredSupporters.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                        {filteredSupporters.map(
-                          (supporter) => (
-                            <div
-                              key={supporter.id}
-                              className="group min-h-[130px] rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.04] p-4 hover:border-cyan-400/50 hover:bg-cyan-400/[0.07] transition-all"
-                            >
-                              <div className="flex justify-between items-start">
-                                <span className="font-mono text-xs text-cyan-400">
-                                  #
-                                  {String(
-                                    supporter.supporter_number
-                                  ).padStart(6, "0")}
-                                </span>
-
-                                <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]" />
-                              </div>
-
-                              <div className="mt-8">
-                                <p className="text-lg font-bold text-white break-words">
-                                  {supporter.display_name}
-                                </p>
-
-                                <p className="text-xs text-gray-500 mt-1 uppercase tracking-wider">
-                                  Claimed
-                                </p>
-                              </div>
-                            </div>
-                          )
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-center py-16">
-                        <p className="text-2xl font-bold">
-                          {search
-                            ? "No matching supporters"
-                            : "The first place is waiting"}
-                        </p>
-
-                        <p className="text-gray-500 mt-3">
-                          {search
-                            ? "Try a different name or supporter number."
-                            : "Be the first name on the Million Names wall."}
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
+                </>
+              )}
             </div>
 
-            {/* WALL INFORMATION */}
-            <div className="border-t border-white/5 p-6">
-              <p className="text-sm text-gray-500">
-                Showing{" "}
-                <span className="text-white">
-                  {filteredSupporters.length.toLocaleString()}
-                </span>{" "}
-                confirmed names out of{" "}
-                <span className="text-white">
-                  {TOTAL_PLACES.toLocaleString()}
-                </span>
-              </p>
-            </div>
+            {/* PAGINATION */}
+            {!loading &&
+              !loadError &&
+              filter !== "available" && (
+                <div className="flex flex-col justify-between gap-5 border-t border-white/10 p-5 sm:p-6 md:flex-row md:items-center">
+                  <p className="text-sm text-gray-300">
+                    Showing{" "}
+                    <strong>
+                      {firstShown.toLocaleString("en-GB")}–
+                      {lastShown.toLocaleString("en-GB")}
+                    </strong>{" "}
+                    of{" "}
+                    <strong>
+                      {matchingCount.toLocaleString("en-GB")}
+                    </strong>{" "}
+                    {searchTerm
+                      ? "matching supporters"
+                      : "confirmed supporters"}
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={page <= 1}
+                      onClick={() => changePage(page - 1)}
+                      className="rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      ← Previous
+                    </button>
+
+                    <span className="text-sm text-gray-300">
+                      {page.toLocaleString("en-GB")} /{" "}
+                      {totalPages.toLocaleString("en-GB")}
+                    </span>
+
+                    <button
+                      type="button"
+                      disabled={page >= totalPages}
+                      onClick={() => changePage(page + 1)}
+                      className="rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </div>
+              )}
           </div>
         </section>
 
-        {/* EQUALITY MESSAGE */}
-        <section className="max-w-5xl mx-auto px-6 pb-24">
-          <div className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-cyan-500/[0.07] via-blue-500/[0.03] to-purple-500/[0.07] p-8 md:p-12 text-center">
-            <p className="text-cyan-400 text-xs font-bold uppercase tracking-[0.2em]">
+        {/* EQUALITY */}
+        <section className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
+          <div className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-cyan-500/[0.07] via-blue-500/[0.03] to-purple-500/[0.07] p-7 text-center md:p-12">
+            <p className="text-sm font-bold uppercase tracking-widest text-cyan-400">
               The Million Names Rule
             </p>
 
-            <h2 className="text-4xl md:text-5xl font-black mt-4">
+            <h2 className="mt-4 text-3xl font-black sm:text-4xl md:text-5xl">
               Everyone is equal.
             </h2>
 
-            <p className="text-gray-400 mt-5 max-w-2xl mx-auto leading-relaxed">
+            <p className="mx-auto mt-5 max-w-2xl leading-relaxed text-gray-300">
               Every supporter gets one place and one supporter
-              number. Contributing more than £1 does not give
-              anyone VIP status, better placement, a larger name
-              or a higher ranking.
+              number. Contributing more than £1 does not provide
+              VIP status, better placement, a larger name or a
+              higher ranking.
             </p>
           </div>
         </section>
 
         {/* CALL TO ACTION */}
-        <section className="max-w-5xl mx-auto px-6 pb-24">
-          <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-900/80 p-10 md:p-14 text-center">
-            <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 via-purple-500/5 to-pink-500/5" />
+        <section className="mx-auto max-w-5xl px-4 pb-16 sm:px-6 md:pb-24">
+          <div className="rounded-[2rem] border border-white/10 bg-zinc-900 p-8 text-center md:p-14">
+            <p className="text-sm font-bold uppercase tracking-widest text-purple-400">
+              Want to be part of it?
+            </p>
 
-            <div className="relative">
-              <p className="text-purple-400 text-xs font-bold uppercase tracking-[0.2em]">
-                Want to be part of it?
-              </p>
+            <h2 className="mt-4 text-3xl font-black sm:text-4xl md:text-5xl">
+              Claim your place.
+            </h2>
 
-              <h2 className="text-4xl md:text-5xl font-black mt-4">
-                Claim your place.
-              </h2>
+            <p className="mt-4 text-gray-300">
+              One name. One number. One shared wall.
+            </p>
 
-              <p className="text-gray-400 mt-4">
-                The first million names will be part of the
-                permanent wall.
-              </p>
-
-              <a
-                href="claim"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 mt-8 bg-cyan-400 text-black font-black px-8 py-4 rounded-2xl hover:bg-cyan-300 hover:scale-[1.03] transition-all"
-              >
-                Claim Your Place →
-              </a>
-            </div>
+            <Link
+              href="/claim"
+              className={`${claimButton} mt-8`}
+            >
+              Claim Your Place →
+            </Link>
           </div>
         </section>
 
         {/* FOOTER */}
-        <footer className="border-t border-white/5">
-          <div className="max-w-7xl mx-auto px-6 py-10">
-            <div className="flex flex-col md:flex-row justify-between gap-6">
+        <footer className="border-t border-white/10">
+          <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+            <div className="flex flex-col justify-between gap-6 md:flex-row">
               <div>
-                <Link
-                  href="/"
-                  className="font-black text-lg"
-                >
+                <Link href="/" className="text-lg font-black">
                   <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
                     MILLION NAMES
                   </span>
                 </Link>
 
-                <p className="text-gray-600 text-sm mt-2">
+                <p className="mt-2 text-sm text-gray-400">
                   One million strangers. One permanent wall.
                 </p>
               </div>
 
-              <div className="flex gap-6 text-sm text-gray-500">
-                <Link
-                  href="/"
-                  className="hover:text-white transition"
-                >
+              <nav
+                aria-label="Footer navigation"
+                className="flex flex-wrap gap-6 text-sm text-gray-300"
+              >
+                <Link href="/" className="hover:text-white">
                   Home
                 </Link>
 
                 <Link
                   href="/wall"
+                  aria-current="page"
                   className="text-white"
                 >
                   The Wall
                 </Link>
 
-                <Link
-                  href="/#faq"
-                  className="hover:text-white transition"
-                >
+                <Link href="/#faq" className="hover:text-white">
                   FAQ
                 </Link>
-              </div>
+              </nav>
             </div>
 
-            <div className="mt-8 pt-6 border-t border-white/5 text-xs text-gray-700">
-              © {new Date().getFullYear()} Million Names. An
-              internet experiment.
-            </div>
+            <p className="mt-8 border-t border-white/10 pt-6 text-sm text-gray-400">
+              Million Names. An internet experiment.
+            </p>
           </div>
         </footer>
       </div>
@@ -473,16 +691,14 @@ export default function Wall() {
   );
 }
 
-function StatCard({ value, label, colour = "" }) {
+function StatCard({ value, label, colour = "text-white" }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-6 text-center">
-      <p className={`text-4xl font-black ${colour}`}>
+    <div className="rounded-2xl border border-white/10 bg-zinc-900 p-6 text-center">
+      <p className={`text-3xl font-black sm:text-4xl ${colour}`}>
         {value}
       </p>
 
-      <p className="text-xs text-gray-500 uppercase tracking-widest mt-2">
-        {label}
-      </p>
+      <p className="mt-2 text-sm text-gray-400">{label}</p>
     </div>
   );
 }
@@ -491,11 +707,12 @@ function FilterButton({ active, onClick, children }) {
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={
         active
-          ? "px-4 py-2 rounded-lg bg-cyan-400 text-black text-sm font-bold"
-          : "px-4 py-2 rounded-lg bg-black/50 border border-white/10 text-gray-400 text-sm font-semibold hover:text-white hover:border-white/20 transition"
+          ? "rounded-xl bg-cyan-400 px-4 py-3 text-sm font-bold text-black"
+          : "rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-sm font-semibold text-gray-300 transition-colors hover:bg-white/5"
       }
     >
       {children}

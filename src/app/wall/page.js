@@ -1,25 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 
 const TOTAL_PLACES = 1000000;
 const PAGE_SIZE = 24;
 
-export default function Wall() {
+function WallContent() {
+  const params = useSearchParams();
+  const requestedNumber = params.get("number") || "";
+  const focusNumber = /^\d{1,7}$/.test(requestedNumber) && Number(requestedNumber) >= 1 && Number(requestedNumber) <= TOTAL_PLACES
+    ? String(Number(requestedNumber)) : "";
   const [supporters, setSupporters] = useState([]);
   const [claimed, setClaimed] = useState(null);
   const [matchingCount, setMatchingCount] = useState(0);
 
-  const [search, setSearch] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [search, setSearch] = useState(focusNumber);
+  const [searchTerm, setSearchTerm] = useState(focusNumber);
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    setSearch(focusNumber);
+    setSearchTerm(focusNumber);
+    setPage(1);
+    setFilter("all");
+  }, [focusNumber]);
 
   useEffect(() => {
     let active = true;
@@ -351,7 +363,7 @@ export default function Wall() {
         </section>
 
         {/* DIRECTORY */}
-        <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 md:pb-24">
+        <section id="wall-directory" className="mx-auto max-w-7xl scroll-mt-6 px-4 pb-16 sm:px-6 md:pb-24">
           <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-900">
             <div className="border-b border-white/10 p-5 sm:p-8">
               <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
@@ -520,7 +532,7 @@ export default function Wall() {
                     {supporters.map((supporter) => (
                       <article
                         key={supporter.id}
-                        className="min-w-0 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.04] p-5 transition-colors hover:border-cyan-400/50"
+                        className={`min-w-0 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.04] p-5 transition-colors hover:border-cyan-400/50 ${String(supporter.supporter_number) === focusNumber ? "ring-2 ring-cyan-400" : ""}`}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <span className="font-mono text-sm text-cyan-400">
@@ -543,6 +555,13 @@ export default function Wall() {
                         <p className="mt-2 text-xs uppercase tracking-wider text-gray-400">
                           Confirmed
                         </p>
+                        <Link
+                          href={`/place?number=${supporter.supporter_number}`}
+                          className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-cyan-300 hover:text-white"
+                          aria-label={`View and share supporter number ${supporter.supporter_number}`}
+                        >
+                          View &amp; share →
+                        </Link>
                       </article>
                     ))}
                   </div>
@@ -688,6 +707,19 @@ export default function Wall() {
         </footer>
       </div>
     </main>
+  );
+}
+
+export default function Wall() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-black p-8 text-white">
+        <Link href="/" className="text-cyan-300">← Back to home</Link>
+        <p role="status" className="mt-8">Loading the wall…</p>
+      </main>
+    }>
+      <WallContent />
+    </Suspense>
   );
 }
 

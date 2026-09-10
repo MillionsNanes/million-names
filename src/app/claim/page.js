@@ -7,6 +7,7 @@ import { supabase } from "../../lib/supabase";
 export default function Claim() {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
+  const [amount, setAmount] = useState("1");
   const [nextNumber, setNextNumber] = useState(null);
 
   const [isNumberLoading, setIsNumberLoading] = useState(true);
@@ -40,6 +41,7 @@ export default function Claim() {
         const { data, error } = await supabase
           .from("supporters")
           .select("supporter_number")
+          .eq("paid", true)
           .not("supporter_number", "is", null)
           .order("supporter_number", {
             ascending: false,
@@ -129,9 +131,9 @@ export default function Claim() {
       return;
     }
 
-    if (isNumberLoading || numberError || nextNumber === null) {
+    if (!/^\d{1,4}(?:\.\d{1,2})?$/.test(amount.trim()) || Number(amount) < 1 || Number(amount) > 1000) {
       setErrorMessage(
-        "Please wait for the supporter number to load, or use Retry."
+        "Enter a contribution between £1 and £1,000, with up to two decimal places."
       );
       return;
     }
@@ -148,6 +150,7 @@ export default function Claim() {
         body: JSON.stringify({
           displayName: cleanedName,
           email: cleanedEmail,
+          amount: amount.trim(),
         }),
       });
 
@@ -384,6 +387,24 @@ export default function Claim() {
 
             {/* CONTRIBUTION INFORMATION */}
             <div className="mt-6 rounded-xl border border-white/10 bg-black/30 p-4">
+              <label htmlFor="contribution" className="mb-3 block text-sm font-semibold text-gray-300">
+                Your contribution (£)
+              </label>
+              <input
+                id="contribution"
+                name="amount"
+                type="number"
+                inputMode="decimal"
+                min="1"
+                max="1000"
+                step="0.01"
+                required
+                value={amount}
+                disabled={isLoading}
+                onChange={(event) => { setAmount(event.target.value); setErrorMessage(""); }}
+                className={`${inputClasses} mb-4`}
+                aria-describedby="contribution-help"
+              />
               <div className="flex justify-between gap-4">
                 <span className="text-sm text-gray-300">
                   Minimum contribution
@@ -392,7 +413,7 @@ export default function Claim() {
                 <span className="font-bold">£1</span>
               </div>
 
-              <p className="mt-3 text-sm leading-relaxed text-gray-400">
+              <p id="contribution-help" className="mt-3 text-sm leading-relaxed text-gray-400">
                 Contributing more does not provide a different
                 position, ranking or status.
               </p>
@@ -413,9 +434,6 @@ export default function Claim() {
               type="submit"
               disabled={
                 isLoading ||
-                isNumberLoading ||
-                nextNumber === null ||
-                Boolean(numberError) ||
                 !formIsValid
               }
               className="mt-8 w-full rounded-2xl bg-cyan-400 px-4 py-4 font-black text-black transition-colors hover:bg-cyan-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"

@@ -1,0 +1,69 @@
+/* Self-hosted fonts are loaded only when used. Text remains visible while they load. */
+@font-face { font-family: "Wall Brush"; src: url("./graffiti-assets/permanent-marker.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Wall Bold"; src: url("./graffiti-assets/bangers.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Wall Hand"; src: url("./graffiti-assets/sedgwick-ave-display.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Wall Stencil"; src: url("./graffiti-assets/stardos-stencil.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Wall Spray"; src: url("./graffiti-assets/rubik-spray-paint.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+
+.brick-surface {
+  background-color: #191b1c;
+  background-image: linear-gradient(#0005, #0005), url("./graffiti-assets/charcoal-brick.webp");
+  background-size: auto, 768px 512px;
+}
+.paint-place { min-width: 0; text-align: center; padding: 1.5rem 1rem; }
+.paint-area { container-type: inline-size; min-width: 0; min-height: 12rem; display: grid; align-items: center; }
+.paint-name { margin: 0; padding: .3em .1em; font-size: 3.5rem; font-size: clamp(1.75rem, var(--paint-size, 24cqi), 6.5rem); line-height: 1.23; font-weight: 400; color: var(--paint-colour, #40dff5); overflow-wrap: anywhere; white-space: pre-wrap; }
+.paint-brush { font-family: "Wall Brush", "Comic Sans MS", cursive; }
+.paint-wildstyle { font-family: "Wall Bold", Impact, sans-serif; letter-spacing: .025em; }
+.paint-handstyle { font-family: "Wall Hand", "Comic Sans MS", cursive; }
+.paint-stencil { font-family: "Wall Stencil", Georgia, serif; font-weight: 700; }
+.paint-bubble { font-family: "Wall Spray", Impact, sans-serif; }
+.paint-name.paint-brush { transform: rotate(-3deg); }
+.paint-name.paint-wildstyle { transform: rotate(-4deg) skew(-4deg); }
+.paint-name.paint-handstyle { transform: rotate(-3deg); }
+.paint-name.paint-bubble { transform: rotate(2deg); }
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .paint-name { background-image: linear-gradient(var(--paint-colour), var(--paint-colour)), url("./graffiti-assets/charcoal-brick.webp"); background-size: auto, 768px 512px; background-blend-mode: screen; -webkit-background-clip: text; background-clip: text; color: transparent; }
+}
+.paint-number { margin-top: .75rem; font-family: monospace; font-size: .9rem; color: #f1f1f2; letter-spacing: .13em; }
+.paint-status { margin-top: .5rem; font-size: .75rem; text-transform: uppercase; letter-spacing: .12em; color: #c8cbd0; }
+.paint-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: stretch; }
+.paint-slot { min-width: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 1.25rem .5rem; border: 2px solid transparent; }
+.paint-slot:hover { background: #ffffff04; }
+.paint-slot.is-focused { border-color: #40dff5; background-color: #40dff509; }
+.paint-slot-link { align-self: center; padding: .75rem 1rem; color: #e3e7ec; font-size: .875rem; text-underline-offset: .3em; }
+.paint-slot-link:hover { color: #40dff5; text-decoration: underline; }
+.paint-slot-link:focus-visible { outline: 2px solid #40dff5; outline-offset: 3px; border-radius: .3rem; }
+.paint-preview { border: 1px solid #ffffff26; border-radius: 1rem; }
+.paint-preview .paint-place { padding: .5rem 1rem 1.75rem; }
+.paint-preview-header { padding: 1.25rem 1.25rem 0; display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; color: #e7e7e7; font-size: .8rem; }
+.paint-preview-note { margin-top: .75rem; font-size: .875rem; line-height: 1.6; color: #b8bec8; }
+.paint-picker { margin-top: 2rem; }
+.paint-picker legend { margin-bottom: .75rem; color: #e5e7eb; font-size: .875rem; font-weight: 600; }
+.paint-style-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .5rem; }
+.paint-style-option { position: relative; cursor: pointer; min-width: 0; }
+.paint-picker input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.paint-option-face { display: flex; min-height: 6rem; flex-direction: column; justify-content: center; gap: .25rem; padding: .75rem; border: 1px solid #ffffff26; border-radius: .75rem; background: #0c0e10; text-align: center; }
+.paint-sample { font-size: 1.6rem; line-height: 1.5; overflow-wrap: anywhere; }
+.paint-option-label { font-size: .8rem; color: #d2d5da; }
+.paint-style-option input:checked + .paint-option-face { border-color: #40dff5; background: #102024; }
+.paint-picker input:focus-visible + span { outline: 2px solid white; outline-offset: 4px; }
+.paint-picker input:disabled + span { opacity: .5; cursor: wait; }
+.paint-colour-field { margin-top: 1.5rem; }
+.paint-colour-options { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: .5rem; }
+.paint-colour-option { position: relative; display: flex; flex-direction: column; align-items: center; gap: .5rem; cursor: pointer; padding: .25rem 0; font-size: .75rem; color: #d2d5da; }
+.paint-swatch { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; color: #080c10; font: bold 1.25rem Arial,sans-serif; border: 3px solid #111; }
+.paint-colour-option input:checked + .paint-swatch { outline: 2px solid white; outline-offset: 2px; }
+.paint-picker-note { margin: 1.25rem 0 0; color: #b8bec8; font-size: .875rem; line-height: 1.6; }
+@media (max-width: 900px) { .paint-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 560px) {
+  .paint-grid { grid-template-columns: minmax(0,1fr); }
+  .paint-slot { padding: 1rem .25rem; }
+  .paint-colour-options { grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; }
+  .paint-area { min-height: 12rem; }
+}
+@media (forced-colors: active) {
+  .paint-name { color: CanvasText; background: none; }
+  .paint-option-face, .paint-swatch { border: 1px solid CanvasText; }
+  .paint-style-option input:checked + .paint-option-face { outline: 2px solid Highlight; }
+}

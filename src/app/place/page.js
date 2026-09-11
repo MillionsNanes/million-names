@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import GraffitiName from "../../components/GraffitiName";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -141,15 +142,20 @@ function PlaceContent() {
             <h1 className="mt-4 text-4xl font-black tracking-tight sm:text-5xl">{isConfirmation ? "THANK YOU." : "ONE OF A MILLION."}</h1>
             <p className="mt-4 text-gray-400">{isConfirmation ? "Your name is on the wall. This is your place in the story." : "One name. One number. Part of something built together."}</p>
           </header>
-          <section aria-label="Supporter place" className="rounded-3xl border border-cyan-400/25 bg-zinc-900 p-7 text-center sm:p-10">
-            <p className="text-xs uppercase tracking-widest text-cyan-300">{isConfirmation ? "Your supporter number" : "Supporter number"}</p>
-            <p className="mt-5 break-all font-mono text-4xl font-black tracking-tight text-cyan-300 sm:text-5xl">{formatted}</p>
-            <h2 className="mt-5 break-words text-3xl font-bold">{result.supporter.displayName}</h2>
-            <p className="mt-5 text-sm text-gray-400">✓ On the wall</p>
-            <Link href={`/wall?number=${result.supporter.number}#wall-directory`} className={`${primary} mt-7 w-full`}>
-              {isConfirmation ? "View my place on the wall →" : "View this place on the wall →"}
-            </Link>
+          <section aria-label="Supporter place" className="paint-preview brick-surface text-center">
+            <p className="px-6 pt-6 text-xs uppercase tracking-widest text-gray-200">{isConfirmation ? "Your mark on the wall" : "One of a million"}</p>
+            <GraffitiName
+              name={result.supporter.displayName}
+              number={result.supporter.number}
+              paintStyle={result.supporter.paintStyle}
+              paintColour={result.supporter.paintColour}
+              status="Confirmed · On the wall"
+              heading
+            />
           </section>
+          <Link href={`/wall?number=${result.supporter.number}#wall-directory`} className={`${primary} mt-5 w-full`}>
+            {isConfirmation ? "View my place on the wall →" : "View this place on the wall →"}
+          </Link>
           <section aria-label="Share this place" className="mt-7">
             <div className="grid gap-3 sm:grid-cols-2">
               <button type="button" onClick={sharePlace} disabled={!shareUrl} className={`${primary} disabled:opacity-50`}>Share {isConfirmation ? "my" : "this"} number ↗</button>

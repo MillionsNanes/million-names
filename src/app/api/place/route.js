@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
+import { resolvePaint } from "../../../lib/graffiti";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ export async function GET(request) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    let query = db.from("supporters").select("display_name, supporter_number, paid");
+    let query = db.from("supporters").select("display_name, supporter_number, paid, paint_style, paint_colour");
 
     if (sessionId) {
       const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -82,10 +83,12 @@ export async function GET(request) {
         : reply({ error: "This place is not on the wall yet." }, 404);
     }
 
+    const paint = resolvePaint(data.paint_style, data.paint_colour, finalNumber);
+
     // Return public information only. Never return email or the full Stripe session.
     return reply({
       status: "ready",
-      supporter: { displayName: data.display_name, number: finalNumber },
+      supporter: { displayName: data.display_name, number: finalNumber, paintStyle: paint.style, paintColour: paint.colour },
     });
   } catch (error) {
     if (error?.code === "resource_missing") {

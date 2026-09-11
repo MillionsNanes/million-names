@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
+import { isPaintStyle, isPaintColour } from "../../../lib/graffiti";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,12 @@ export async function POST(request) {
 
   const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const paintStyle = body?.paintStyle === undefined ? "brush" : body.paintStyle;
+  const paintColour = body?.paintColour === undefined ? "cyan" : body.paintColour;
+  if (!isPaintStyle(paintStyle) || !isPaintColour(paintColour)) {
+    return NextResponse.json({ error: "Please choose one of the available lettering styles and paint colours." }, { status: 400 });
+  }
+
   const amountText = body?.amount === undefined ? "1" : typeof body.amount === "string" ? body.amount.trim() : "";
   const amountParts = amountText.split(".");
   const amountPence = Number(amountParts[0]) * 100 + Number((amountParts[1] || "").padEnd(2, "0"));
@@ -52,7 +59,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "The wall is full. All places have been claimed." }, { status: 409 });
     }
     const { data: supporter, error: insertError } = await db.from("supporters")
-      .insert({ display_name: displayName, email, amount: amountPence / 100, paid: false, supporter_number: null })
+      .insert({ display_name: displayName, email, amount: amountPence / 100, paid: false, supporter_number: null, paint_style: paintStyle, paint_colour: paintColour })
       .select("id").single();
     if (insertError) throw insertError;
     const supporterId = String(supporter.id);

@@ -3,11 +3,15 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import GraffitiName from "../../components/GraffitiName";
+import PaintPicker from "../../components/PaintPicker";
 
 export default function Claim() {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [amount, setAmount] = useState("1");
+  const [paintStyle, setPaintStyle] = useState("brush");
+  const [paintColour, setPaintColour] = useState("cyan");
   const [nextNumber, setNextNumber] = useState(null);
 
   const [isNumberLoading, setIsNumberLoading] = useState(true);
@@ -151,6 +155,8 @@ export default function Claim() {
           displayName: cleanedName,
           email: cleanedEmail,
           amount: amount.trim(),
+          paintStyle,
+          paintColour,
         }),
       });
 
@@ -251,7 +257,7 @@ export default function Claim() {
             </h1>
 
             <p className="mt-5 text-base text-gray-300">
-              Choose the name that will appear on the wall.
+              Your name. Your lettering. Your mark on the wall.
             </p>
           </div>
 
@@ -325,65 +331,41 @@ export default function Claim() {
               />
             </div>
 
-            {/* PREVIEW */}
-            <div className="mt-8 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-5 sm:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-bold uppercase tracking-widest text-cyan-400">
-                  Preview
-                </p>
+            <PaintPicker
+              paintStyle={paintStyle}
+              paintColour={paintColour}
+              onStyleChange={setPaintStyle}
+              onColourChange={setPaintColour}
+              disabled={isLoading}
+            />
 
-                <span className="text-xs text-gray-400">
-                  Estimated next number
-                </span>
+            <div className="paint-preview brick-surface mt-8" aria-label="Your name preview">
+              <div className="paint-preview-header">
+                <span>YOUR WALL PREVIEW</span>
+                <span>Estimated next number</span>
               </div>
-
-              <div className="mt-4">
-                <p
-                  aria-live="polite"
-                  className="font-mono text-lg text-cyan-400"
-                >
-                  {isNumberLoading
-                    ? "Loading number…"
-                    : formattedNextNumber}
-                </p>
-
-                <p className="mt-3 break-words text-2xl font-black [overflow-wrap:anywhere]">
-                  {displayName.trim() || "Your Name"}
-                </p>
-
-                <p className="mt-2 text-xs uppercase tracking-wider text-gray-400">
-                  Awaiting payment
-                </p>
-
-                <p className="mt-4 text-sm leading-relaxed text-gray-400">
-                  This number is a preview, not a reservation.
-                  It may change before your payment is confirmed.
-                </p>
-              </div>
-
-              {numberError && (
-                <div
-                  role="status"
-                  className="mt-4 border-t border-white/10 pt-4"
-                >
-                  <p className="text-sm text-amber-200">
-                    {numberError}
-                  </p>
-
-                  <button
-                    type="button"
-                    disabled={isNumberLoading || isLoading}
-                    onClick={() => {
-                      setErrorMessage("");
-                      setNumberRetry((value) => value + 1);
-                    }}
-                    className="mt-3 rounded-lg border border-cyan-400/30 px-4 py-2 text-sm font-semibold text-cyan-300 transition-colors hover:bg-cyan-400/10 disabled:opacity-50"
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
+              <GraffitiName
+                name={displayName}
+                number={nextNumber}
+                paintStyle={paintStyle}
+                paintColour={paintColour}
+                numberLabel={isNumberLoading ? "Loading number…" : formattedNextNumber}
+                status="Awaiting payment"
+              />
             </div>
+            <p className="paint-preview-note">
+              Your final number is assigned after payment. This preview does not reserve a number.
+            </p>
+            {numberError && (
+              <div role="status" className="mt-4 rounded-xl border border-white/10 p-4">
+                <p className="text-sm text-amber-200">{numberError}</p>
+                <button type="button" disabled={isNumberLoading || isLoading}
+                  onClick={() => setNumberRetry((value) => value + 1)}
+                  className="mt-3 rounded-lg border border-cyan-400/30 px-4 py-2 text-sm font-semibold text-cyan-300 disabled:opacity-50">
+                  Retry number preview
+                </button>
+              </div>
+            )}
 
             {/* CONTRIBUTION INFORMATION */}
             <div className="mt-6 rounded-xl border border-white/10 bg-black/30 p-4">
@@ -444,7 +426,7 @@ export default function Claim() {
             </button>
 
             <p className="mt-4 text-center text-sm leading-relaxed text-gray-400">
-              Review your display name and email before continuing.
+              Check your name, lettering, colour and email before continuing.
             </p>
           </form>
         </div>

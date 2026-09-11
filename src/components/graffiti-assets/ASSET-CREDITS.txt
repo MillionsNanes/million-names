@@ -1,0 +1,16 @@
+Million Names graffiti assets
+
+Original charcoal brick texture generated for this project with OpenAI image generation.
+Converted to WebP (1536 x 1024, approximately 183 KB).
+
+Fonts downloaded from Google Fonts, preserved with their license notices:
+- Permanent Marker: brush lettering; Apache License 2.0
+- Bangers: bold graffiti; SIL Open Font License 1.1
+- Sedgwick Ave Display: handwritten lettering; SIL Open Font License 1.1
+- Stardos Stencil Bold: stencil lettering; SIL Open Font License 1.1
+- Rubik Spray Paint: spray lettering; SIL Open Font License 1.1
+
+Source: https://github.com/google/fonts
+CSS source: https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Rubik+Spray+Paint&family=Sedgwick+Ave+Display&family=Stardos+Stencil:wght@700&display=swap
+
+Font files converted from TTF to WOFF2 compression with fontTools. Glyphs and internal font names unchanged. Individual license files accompany these fonts; retain them when redistributing the source.

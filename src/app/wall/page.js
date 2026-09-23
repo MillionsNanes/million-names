@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import GraffitiName from "../../components/GraffitiName";
+import Founding50Progress from "../../components/Founding50Progress";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabase";
@@ -285,6 +286,7 @@ function WallContent() {
               <FilterButton active={filter === "available"} onClick={() => setFilter("available")}>Available</FilterButton>
             </div>
           </div>
+          <Founding50Progress confirmedCount={claimed} unavailable={!!loadError} />
           {searchTerm && <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
             <span>Results for <strong>{searchTerm}</strong></span>
             <button type="button" onClick={clearSearch} className="rounded-lg border border-white/30 bg-black/40 px-3 py-2 hover:bg-black/70">Show all names</button>
@@ -317,7 +319,7 @@ function WallContent() {
               {supporters.map((supporter) => (
                 <article key={supporter.id} className={`paint-slot ${String(supporter.supporter_number) === focusNumber ? "is-focused" : ""}`}>
                   <GraffitiName name={supporter.display_name} number={supporter.supporter_number}
-                    paintStyle={supporter.paint_style} paintColour={supporter.paint_colour} heading />
+                    paintStyle={supporter.paint_style} paintColour={supporter.paint_colour} heading confirmed />
                   <Link href={`/place?number=${supporter.supporter_number}`} className="paint-slot-link"
                     aria-label={`View and share ${supporter.display_name}, supporter number ${supporter.supporter_number}`}>View & share →</Link>
                 </article>
